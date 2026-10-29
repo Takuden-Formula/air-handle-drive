@@ -1,177 +1,135 @@
-// サーキット（参照実装）：1 周約 1.2 km のクローズドコース。メインストレート・ヘアピン・S 字・高速の最終コーナー。
-// グランドスタンド・ピット・スタートのシグナル（レースのランプと連動）・縁石・グラベル・タイヤバリア・キャッチフェンス・
-// 広告看板・歩道橋・観覧車・照明塔・マーシャルポスト・距離看板・林。
-// 他のコースを作るときはこのファイルの形（build と decorate）をまねる。
+// サーキット：1 周約 1.4 km の国際格式のクローズドコース（鈴鹿・富士のような作り）。
+// メインストレート → 1・2 コーナー → 上りの S 字 → 右の高速コーナー → 下りの東ストレート → 2 連の右（デグナー風）
+// → ヘアピン → スプーン（180° の右）→ 下りのバックストレート → 高速の右（130R 風）→ シケイン → 最終コーナー。
+// 景色は js/courses/circuit/scenery.js（サーキット専用の部品）で作る。
+// 他のコースを作るときもこのファイルの形（build と decorate）をまねる。
 import { PathBuilder, profile, defaultEdges } from '../engine/track.js';
-import { coneZones, startArea, finishArea, forRange } from './common.js';
+import { coneZones } from './common.js';
+import { decorateCircuit } from './circuit/scenery.js';
 
 // 中心線（時計回り）。数値は直線の長さ [m]、turn(半径 [m], 角度 [度]（+ = 右）)
+// main と back の 2 本の直線の長さは、継ぎ目がぴったり閉じるように自動で決まる
 function makePath() {
   const p = new PathBuilder({ x: 0, z: 0, heading: 0 });
-  p.mark('main').straight(200, { id: 'main' })
-    .mark('T1').turn(32, 90).mark('T1x')
-    .straight(95).mark('top')
-    .mark('T2').turn(60, -45).mark('T3').turn(40, 90).mark('T3x')
-    .straight(70)
-    .mark('hairpin').turn(20, 135).mark('hairpinX')
-    .mark('back').straight(100, { id: 'back' })
-    .mark('T6').turn(50, -90).mark('T6x')
-    .straight(115).mark('long')
-    .mark('T7').turn(35, 90).mark('T7x')
-    .straight(45)
-    .mark('final').turn(45, 90).mark('end');
+  p.mark('main').straight(220, { id: 'main' })
+    .mark('T1').turn(55, 60).mark('T2').turn(28, 60).mark('T2x')
+    .straight(10)
+    .mark('S1').turn(34, -50).mark('S2').turn(34, 60).mark('S3').turn(34, -60).mark('S4').turn(38, 40).mark('Sx')
+    .straight(10)
+    .mark('dunlop').turn(55, 60).mark('dunlopX')
+    .straight(120).mark('east')
+    .mark('degner').turn(30, 40).mark('degner2').straight(8).turn(22, 60).mark('degnerX')
+    .straight(30)
+    .mark('hairpin').turn(14, -180).mark('hairpinX')
+    .straight(30)
+    .mark('spoon').turn(32, 180).mark('spoonX')
+    .straight(200, { id: 'back' }).mark('back')
+    .mark('r130').turn(90, 25).mark('r130x')
+    .straight(30)
+    .mark('chicane').turn(13, 45).mark('chicane2').turn(13, -45).mark('chicaneX')
+    .straight(20)
+    .mark('final').turn(40, 65).mark('end');
   return p;
 }
+
+export const HALF = 6;        // 道幅 12 m
+export const PIT = { d0: HALF + 3.2, d1: HALF + 15.5 };   // ピットレーン（メインストレートの右）の横の範囲 [m]
 
 export default {
   id: 'circuit',
   name: 'サーキット',
   nameEn: 'TAKUDEN CIRCUIT',
-  desc: '本格サーキットを1周。\nヘアピンとS字、長いストレート',
+  desc: '国際格式のサーキットを1周。\nS字・ヘアピン・スプーン・シケイン',
   accent: '#e53935',
   difficulty: 2,
   latG: 2.0,          // コーナーでこの横 G まで自動で減速する
-  // 午後の晴れ（太陽は南西）
+  // コース選択のカードの視点：グリッドの後ろの斜め上から、スタンドとピットとガントリーを見る
+  thumb: { s: -32, d: 13, h: 15, look: 70 },
+  // 晴れた日の昼過ぎ（太陽は南南西）。空気は澄んで、遠くの山がくっきり
   env: {
-    sunElevation: 34, sunAzimuth: 225, turbidity: 3.0, rayleigh: 1.3, skyIntensity: 0.55,
-    clouds: { cover: 0.5, sharp: 0.2, scale: 0.8, speed: 0.006, opacity: 0.9 },
-    sunIntensity: 3.4, ambient: 0.35, envIntensity: 0.9, fogDensity: 0.0009,
-    mountains: { count: 3, height: 260, dist: 2400, color: [0.33, 0.43, 0.5], seed: 11 },
+    sunElevation: 40, sunAzimuth: 212, turbidity: 2.4, rayleigh: 1.15, mie: 0.004, skyIntensity: 0.6,
+    clouds: { cover: 0.38, sharp: 0.32, scale: 0.75, speed: 0.006, opacity: 0.92, bright: 1.15 },
+    sunIntensity: 3.6, ambient: 0.36, envIntensity: 0.95, fogDensity: 0.00065, groundColor: [0.2, 0.24, 0.17],
+    mountains: { count: 4, height: 300, dist: 2300, color: [0.30, 0.40, 0.48], seed: 11 },
   },
-  grade: { exposure: 1.0, saturation: 1.1, contrast: 1.06, vignette: 0.3 },
+  grade: { exposure: 1.0, saturation: 1.12, contrast: 1.07, vignette: 0.28 },
 
   // 走るための形（three.js を使わないデータ）。opts: { length, cones }
   build(opts) {
     const p = makePath();
     const path = p.build({ ds: 1, close: true, solve: ['main', 'back'] });
-    const M = p.marks, L = p.length;
-    const half = 6;   // 道幅 12 m
-    // 高低差：メインストレートは平ら、ヘアピンに向かって上り、裏のストレートで下る
-    const elevation = profile([[0, 0], [M.T1, 0], [M.top, 3], [M.T3x, 6], [M.hairpin, 8], [M.back + 60, 7], [M.T6x, 4], [M.long, 1], [M.final, 0], [L, 0]], { period: L });
+    const M = p.marks, L = p.length, half = HALF;
+    // 高低差：メインストレートは平ら。S 字で上ってダンロップ（右の高速）が一番高く、東ストレートを下ってヘアピン、
+    // スプーンで少し上ってバックストレートを下る（実在のサーキットと同じく勾配は 5% 以下）
+    const elevation = profile([
+      [0, 0], [M.T1, -0.4], [M.T2x, -1.2], [M.S1 + 20, -0.8], [M.S3, 4.0], [M.Sx, 8.6], [M.dunlopX, 11.6],
+      [M.east, 7.6], [M.degnerX, 4.0], [M.hairpin, 3.0], [M.hairpinX, 3.0], [M.spoon + 40, 4.2], [M.spoonX, 5.8],
+      [M.spoonX + 60, 4.8], [M.back, 1.4], [M.r130x, 0.2], [M.chicaneX, 0], [L, 0],
+    ], { period: L });
+    // 少しだけバンク（右コーナーは右が低い = +）
+    const bank = profile([
+      [0, 0], [M.T1 + 10, 0.025], [M.T2x, 0.01], [M.spoon + 20, 0.04], [M.spoonX - 20, 0.04], [M.spoonX + 30, 0],
+      [M.r130 + 10, 0.03], [M.r130x, 0], [L, 0],
+    ], { period: L });
+    const inR = (s, a, b) => (a <= b ? s >= a && s <= b : s >= a || s <= b);
     // 道の脇
     const edges = (s, side, info) => {
-      // メインストレート：左（西）はグランドスタンドの金網、右はピットウォール
-      if (s < M.T1 - 25 || s > L - 10) {
+      // メインストレート：左（西）はグランドスタンドの前の金網、右はピットウォール（その外がピットレーン）
+      if (inR(s, L - 38, M.T1 - 6)) {
         return side < 0
-          ? { kerb: 0, runoff: 'asphalt', runoffW: 2.5, barrier: 'fence', barrierD: half + 3, verge: 16 }
-          : { kerb: 0, runoff: 'asphalt', runoffW: 1.5, barrier: 'wall', barrierD: half + 2.2, verge: 2 };
+          ? { kerb: 0, runoff: 'asphalt', runoffW: 2.6, barrier: 'fence', barrierD: half + 3.4, verge: 18 }
+          : { kerb: 0, runoff: 'asphalt', runoffW: PIT.d1 - half, barrier: 'wall', barrierD: half + 2.2, verge: 2 };
       }
-      return defaultEdges(s, side, info);
+      // ピットの入口（最終コーナーの内側）と出口（1 コーナーの内側）：舗装を広げてピットレーンにつなぐ
+      if (side > 0 && (inR(s, L - 75, L - 38) || inR(s, M.T1 - 6, M.T1 + 40))) {
+        const e = defaultEdges(s, side, info);
+        return { ...e, runoff: 'asphalt', runoffW: PIT.d1 - half - 2, barrier: 'none', barrierD: PIT.d1 + 1, verge: 3 };
+      }
+      const e = defaultEdges(s, side, info);
+      const k = Math.abs(info.kappa), outside = Math.sign(info.kappa) === -side, corner = k > 1 / 140;
+      // シケイン：両側に縁石と舗装のランオフ（ショートカットしても砂利で止まらないように）、外はタイヤバリア
+      if (inR(s, M.chicane - 12, M.chicaneX + 10)) return { kerb: 1.4, runoff: 'asphalt', runoffW: 9, barrier: 'tires', barrierD: half + 1.4 + 10 };
+      // 速いコーナーの外（1 コーナー・ダンロップ・130R・最終）は舗装のランオフ＋タイヤバリア（現代のサーキット）
+      if (corner && outside && (inR(s, M.T1 - 10, M.T2) || inR(s, M.dunlop - 10, M.dunlopX + 10) || inR(s, M.r130 - 10, M.r130x + 10) || inR(s, M.final - 10, L - 38))) {
+        return { kerb: 1.5, runoff: 'asphalt', runoffW: 13, barrier: 'tires', barrierD: half + 1.5 + 14.5 };
+      }
+      // 遅いコーナーの外（2 コーナー・ヘアピン・スプーン・デグナー）は砂利＋タイヤバリア（既定）
+      if (corner && outside) return { ...e, kerb: 1.4, runoffW: k > 1 / 25 ? 15 : 12, barrierD: half + 1.4 + (k > 1 / 25 ? 16 : 13) };
+      // バックストレート：観客の土手の前は金網
+      if (!corner && inR(s, M.spoonX + 15, M.back - 5)) return { kerb: 0, runoff: 'grass', runoffW: 7, barrier: 'fence', barrierD: half + 8, verge: 10 };
+      return e;
     };
-    // 長さの設定：ふつう = 1 周、みじかい = 半周（裏のストレートでゴール）、ながい = 2 周
-    const sLine = 60;                         // スタート / ゴールライン
+    // 長さの設定：ふつう = 1 周、みじかい = 東ストレートでゴール（約半周）、ながい = 1 周してもう一度東ストレートの入口まで（約 1.4 周）
+    // ながいを 2 周にしないのは、理論最速が 100 秒を越えて既定の制限時間（90 秒）に収まらないため（ほかのコースも「ながい」は 1.5 倍）
+    const sLine = 46;                         // スタート / ゴールライン
     const startS = sLine - 3;                 // 車の中心のスタート位置（ラインの 3 m 手前）
-    let raceLength, laps = 1;
-    if (opts.length === 'short') raceLength = (M.back + 40) - startS;
-    else if (opts.length === 'long') { laps = 2; raceLength = 2 * L + 3; }
+    const shortLen = (M.east - 12) - startS;
+    let raceLength;
+    const laps = 1;
+    if (opts.length === 'short') raceLength = shortLen;
+    else if (opts.length === 'long') raceLength = L + (M.dunlopX + 40) - startS;   // 目標タイム（理論最速 +20%）が 90 秒に収まる長さ
     else raceLength = L + 3;
-    // コーン（練習用のパイロン）：上のストレートと裏のストレート、最後の長いストレート
+    // コーン（練習用のパイロン）：バックストレートの前半はスラローム、後半は車線ふさぎ。
+    // ゴールの後（みじかい・ながいのゴールは東ストレート）に惰性で走ってコーンに当たらないよう、東ストレートには置かない
     const rnd = mulberry(opts.seed || 7);
     const tmp = { halfWidth: () => half };
-    const zones = [{ s0: M.T1x + 10, s1: M.top - 10, kind: 'lane' }, { s0: M.back + 10, s1: M.back + 100, kind: 'slalom' }, { s0: M.T6x + 20, s1: M.long - 30, kind: 'lane' }];
-    const cones = opts.cones ? coneZones(tmp, zones, rnd) : [];   // 2 周するときも同じコーン（はね飛ばした物はそのまま）
-    return {
-      path, width: half * 2, elevation, edges, ground: 'grass',
-      startS, raceLength, laps, cones, sLine, marks: M,
-      terrain: { amp: 22, scale: 320, flat: 40, ramp: 220, seed: 4 },
-      trackStyle: { markings: [{ edge: -1, inset: 0.25, w: 0.2 }, { edge: 1, inset: 0.25, w: 0.2 }] },
-    };
-  },
-
-  // 景色（three.js）。ctx は engine/stage.js を参照
-  decorate(ctx) {
-    const { track, mb, forest, props, group, rnd, layout, deco } = ctx;
-    const M = layout.marks, L = track.length, half = 6;
-    const place = ctx.place;
-    const sLine = layout.sLine;
-    // ---- スタート / ゴール ----
-    const sa = startArea(ctx, sLine, { label: 'TAKUDEN GRAND PRIX', finishHere: ctx.laps >= 1 && ctx.opts.length !== 'short', grid: 4 });
-    if (ctx.opts.length === 'short') finishArea(ctx, track.wrap(ctx.startS + ctx.raceLength), { label: 'FINISH' });
-    // ---- グランドスタンド（メインストレートの左）とピット（右） ----
-    for (const s of [40, 110, 180]) props.grandstand(mb, place(s, -(half + 3 + 9)), { length: 64, rows: 14, color: 0xc62828, sign: s === 110 ? 'TAKUDEN CIRCUIT' : null });
-    // ピットレーン（ピットウォールの外の舗装）とピットの建物
-    group.add(props.roadDecal(track, 15, 200, half + 2.6, half + 14, ctx.MAT.asphalt(), { lift: 0.02, steps: 50 }));
-    group.add(props.roadDecal(track, 15, 200, half + 10.2, half + 10.4, ctx.MAT.line(), { lift: 0.035, steps: 50 }));
-    props.pitBuilding(mb, place(115, half + 14 + 0.3), { length: 180, depth: 16, height: 8, garages: 14 });
-    // 計時塔
-    props.billboard(mb, place(70, half + 12), { w: 3, h: 9, text: 'P1', bg: '#11161d', bg2: '#1c2733', legs: 0, sub: 'TIMING' });
-    // ---- 歩道橋（メインストレートの終わり） ----
-    {
-      const s = 215, m = track.placeMatrix(s, 0, 0, { yaw: Math.PI / 2 });
-      const span = track.barrierD(s, -1) + track.barrierD(s, 1) + 6;
-      props.footBridge(mb, m, { span, height: 6.5, text: 'TAKUDEN FORMULA  ・  拓殖大学 電気自動車同好会' });
-    }
-    // ---- 観覧車（グランドスタンドの裏） ----
-    {
-      const p = track.toWorld(120, -95, 0);
-      const fw = props.ferrisWheel(props.mat4(p.x, ctx.heightFn(p.x, p.z), p.z, Math.PI / 2 - track.headingAt(120)), { radius: 28 });
-      group.add(fw.group); ctx.addUpdate((dt) => fw.update(dt));
-    }
-    // ---- コーナーの飾り：縁石の外の矢印看板・距離看板・マーシャルポスト・観客 ----
-    const corners = findCorners(track);
-    for (const k of corners) {
-      const out = -k.dir;   // 右カーブ（dir=1）の外側は左
-      const sMid = (k.s0 + k.s1) / 2;
-      // マーシャルポスト（内側）
-      const din = -out * (track.barrierD(sMid, -out) + 4);
-      props.marshalPost(mb, place(sMid, din));
-      // 矢印看板（外側の壁の上）
-      for (let s = k.s0 + 4; s < k.s1 - 2; s += 9) props.chevron(mb, place(s, out * (track.barrierD(s, out) + 0.9)), k.dir);
-      // 距離看板（きついカーブの手前、外側）
-      if (k.peak > 1 / 40) for (const [d, lab] of [[150, '150'], [100, '100'], [50, '50']]) {
-        const s = k.s0 - d; if (s < 30 && !track.closed) continue;
-        props.distanceBoard(mb, place(track.wrap(s), out * (track.barrierD(track.wrap(s), out) + 1.2)), lab);
-      }
-      // 観客（きついカーブの外側の土手）
-      if (k.peak > 1 / 36) for (let s = k.s0; s < k.s1; s += 18) props.spectators(mb, place(s, out * (track.barrierD(s, out) + 7)), { length: 16, rows: 2 });
-    }
-    // ---- 広告看板（直線の壁の外） ----
-    const ADS = [
-      { text: 'TAKUDEN FORMULA', bg: '#0f4fb4', fg: '#ffffff' }, { text: '⚡ EV POWER', bg: '#ffc928', fg: '#1a1a1a' },
-      { text: '拓殖大学', bg: '#ffffff', fg: '#0f2f6b', sub: '電気自動車同好会' }, { text: 'ZERO EMISSION', bg: '#1b5e20', fg: '#ffffff' },
-      { text: 'STUDENT FORMULA', bg: '#c62828', fg: '#ffffff' }, { text: 'DENSO 36kW', bg: '#11161d', fg: '#ffc928' },
+    const zones = [
+      { s0: M.spoonX + 6, s1: M.spoonX + 68, kind: 'slalom', step: 12 },
+      { s0: M.spoonX + 72, s1: M.back - 6, kind: 'lane' },
     ];
-    let ad = 0;
-    forRange(track, 0, L, 26, (s) => {
-      if (s < M.T1 + 40 && s > 0) return;                     // メインストレートはスタンドとピット
-      if (Math.abs(track.kappaAt(s)) > 1 / 150) return;       // カーブの外はグラベル
-      const side = (Math.floor(s / 26) % 2) ? -1 : 1;
-      const d = side * (track.barrierD(s, side) + 1.4);
-      props.billboard(mb, place(s, d), { w: 9, h: 1.6, legs: 0.6, ...ADS[ad++ % ADS.length] });
-    });
-    // ---- 照明塔 ----
-    forRange(track, 20, L, 120, (s) => { const side = Math.floor(s / 120) % 2 ? 1 : -1; props.lightTower(mb, place(s, side * (track.barrierD(s, side) + 8)), { height: 20 }); });
-    // ---- 林（コースから離れた所。道の近くと建物の所はよける） ----
-    const b = track.bounds, margin = 380;
-    const N = Math.round(2600 * deco);
-    for (let i = 0; i < N; i++) {
-      const x = b.x0 - margin + rnd() * (b.x1 - b.x0 + 2 * margin), z = b.z0 - margin + rnd() * (b.z1 - b.z0 + 2 * margin);
-      const near = track.nearest(x, z, 120);
-      if (near) {
-        const side = near.d >= 0 ? 1 : -1, clear = track.barrierD(near.s, side) + 14;
-        if (near.dist < clear) continue;
-        if (near.s < M.T1 && near.d < 0 && near.dist < 130) continue;    // グランドスタンドと観覧車の所
-        if (near.s < M.T1 && near.d > 0 && near.dist < 45) continue;      // ピット
-      }
-      const y = ctx.heightFn(x, z);
-      const r = rnd(), kind = r < 0.45 ? 'conifer' : r < 0.9 ? 'broadleaf' : 'bush';
-      forest.add(kind, x, y, z, 0.8 + rnd() * 0.6, rnd() * 6.28, (rnd() - 0.5) * 0.2);
-    }
+    const cones = opts.cones ? coneZones(tmp, zones, rnd) : [];   // 2 回通るときも同じコーン（はね飛ばした物はそのまま）
     return {
-      setStartLights: (n, color) => sa.setStartLights(n, color),
+      path, width: half * 2, elevation, bank, edges, ground: 'grass',
+      startS, raceLength, laps, cones, sLine, marks: M, pitD1: PIT.d1,
+      terrain: { amp: 26, scale: 300, flat: 46, ramp: 240, seed: 4 },
+      // 白線：左端は track.js、右端は circuit/trackside.js の roadPaint で描く（track.js は同じ色の線を 2 本にすると
+      // 区画の中で線の終わりと次の線の始まりが細い三角形でつながってしまうため。直ったら 2 本ともここに戻してよい）
+      trackStyle: { markings: [{ edge: -1, inset: 0.25, w: 0.2 }] },
     };
   },
-};
 
-// カーブの区間を探す（なめらかにした曲率がしきい値を越える所）
-export function findCorners(track, thr = 1 / 140) {
-  const out = []; let cur = null;
-  for (let i = 0; i < track.n; i++) {
-    const k = track.kappaS[i], on = Math.abs(k) > thr, s = i * track.ds;
-    if (on && (!cur || Math.sign(k) !== cur.dir)) { cur = { s0: s, s1: s, dir: Math.sign(k), peak: 0 }; out.push(cur); }
-    if (on) { cur.s1 = s; cur.peak = Math.max(cur.peak, Math.abs(k)); } else cur = null;
-  }
-  return out.filter((c) => c.s1 - c.s0 > 8);
-}
+  // 景色（three.js）。ctx は engine/stage.js を参照。中身は js/courses/circuit/scenery.js
+  decorate(ctx) { return decorateCircuit(ctx); },
+};
 
 function mulberry(a) { return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
