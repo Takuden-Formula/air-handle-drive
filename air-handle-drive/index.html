@@ -4,80 +4,32 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>エアハンドル・ドライブ</title>
-<style>
-  :root { --camW: min(36vw, 64vh); --text: #fff; --sub: #c7d2e0; --win: #ffcf3f; --ok: #7ee787; --ng: #ff6b6b; --panel: rgba(10,16,26,.72); }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: #000; color: var(--text); overflow: hidden;
-    font-family: "Meiryo", "Yu Gothic UI", "Hiragino Sans", sans-serif; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
-  .hud { position: fixed; z-index: 2; text-shadow: 0 2px 4px rgba(0,0,0,.7); pointer-events: none; }
-  #hudTime { top: 14px; left: 20px; }
-  #hudTime .t { font-size: min(96px, 7.5vw); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
-  #hudTime .g { font-size: min(34px, 2.8vw); font-weight: bold; color: var(--sub); margin-top: 4px; }
-  #hudRight { top: 14px; right: 20px; text-align: right; font-size: min(40px, 3.2vw); font-weight: bold; }
-  #hudSpeed { left: 20px; bottom: 16px; }
-  #hudSpeed .v { font-size: min(120px, 9vw); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
-  #hudSpeed .u { font-size: min(36px, 2.8vw); font-weight: bold; color: var(--sub); }
-  #hudSpeed .rpm { font-size: min(26px, 2vw); font-weight: bold; color: var(--sub); font-variant-numeric: tabular-nums; margin-bottom: 4px; }
-  #hudSpeed .bar { width: min(260px, 20vw); height: 12px; border-radius: 6px; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.5); overflow: hidden; margin-bottom: 2px; }
-  #rpmBar { height: 100%; width: 0; background: linear-gradient(90deg, #4fc3f7 0%, #7ee787 50%, #ffcf3f 80%, #ff6b6b 100%); background-size: min(260px, 20vw) 100%; }
-  #progWrap { position: fixed; z-index: 2; top: 18px; left: 50%; transform: translateX(-50%); width: min(34vw, 560px);
-    height: 24px; background: rgba(0,0,0,.4); border-radius: 12px; border: 2px solid rgba(255,255,255,.6); }
-  #prog { height: 100%; width: 0; background: linear-gradient(90deg, #4fc3f7, #ffcf3f); border-radius: 10px; }
-  #progWrap::after { content: "🏁"; position: absolute; right: -46px; top: -14px; font-size: 38px; }
-  #camWrap { position: fixed; z-index: 2; right: 16px; bottom: 16px; width: var(--camW); border-radius: 16px; overflow: hidden;
-    border: 3px solid rgba(255,255,255,.7); background: #000; }
-  #cam { width: 100%; display: block; }
-  #camLabel { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: min(34px, 2.6vw); font-weight: bold; padding: 4px; background: rgba(0,0,0,.55); }
-  #center { position: fixed; z-index: 3; inset: 0; padding-right: calc(var(--camW) + 16px); display: flex; flex-direction: column; align-items: center; justify-content: center;
-    pointer-events: none; text-align: center; }
-  #big { font-size: min(160px, 8.5vw); font-weight: 900; line-height: 1.1; text-shadow: 0 6px 0 rgba(0,0,0,.5), 0 0 24px rgba(0,0,0,.6); white-space: pre; }
-  #small { font-size: min(56px, 3.8vw); line-height: 1.3; font-weight: bold; max-width: 100%; white-space: pre-line; text-shadow: 0 3px 0 rgba(0,0,0,.7); margin-top: 8px; }
-  #card { margin-top: 18px; background: var(--panel); border-radius: 16px; padding: 16px 32px; font-size: min(36px, 2.8vw); font-weight: bold; display: none; min-width: 420px; }
-  #card table { margin: 6px auto 0; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  #card td { padding: 2px 18px; }
-  #holdBar { width: min(600px, 50vw); height: 28px; border-radius: 14px; background: rgba(0,0,0,.4); margin-top: 14px; overflow: hidden; display: none;
-    border: 2px solid rgba(255,255,255,.7); }
-  #holdBar div { height: 100%; width: 0; background: var(--ok); }
-  #lights { display: none; gap: 18px; padding: 18px 26px; background: #111; border-radius: 16px; border: 4px solid #333; }
-  #lights .l { width: min(110px, 8vw); height: min(110px, 8vw); border-radius: 50%; background: #3a0d0d; box-shadow: inset 0 0 12px #000; }
-  #lights .l.on { background: #ff1f1f; box-shadow: 0 0 30px #ff1f1f; }
-  .pop { animation: pop .35s ease-out; }
-  @keyframes pop { from { transform: scale(1.6); opacity: .2; } to { transform: scale(1); opacity: 1; } }
-  #gear { position: fixed; z-index: 4; top: min(80px, 7vw); right: 20px; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.4);
-    color: #fff; border-radius: 8px; font-size: 26px; padding: 2px 10px; cursor: pointer; opacity: .5; }
-  #fsHint { position: fixed; z-index: 5; top: 70px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.7); color: #fff;
-    font-size: 26px; font-weight: bold; padding: 10px 24px; border-radius: 12px; display: none; pointer-events: none; }
-  #status { position: fixed; z-index: 2; left: 50%; transform: translateX(-50%); bottom: 6px; font-size: 18px; color: var(--sub);
-    background: rgba(0,0,0,.4); padding: 2px 12px; border-radius: 8px; }
-  #status .ok { color: var(--ok); } #status .ng { color: var(--ng); }
-  #settings { position: fixed; top: 0; right: 0; height: 100%; width: 480px; max-width: 100%; background: #0c1016; z-index: 10;
-    border-left: 1px solid #2c3547; padding: 18px; overflow-y: auto; display: none; font-size: 18px; }
-  #settings.show { display: block; }
-  #settings h2 { margin: 0 0 10px; font-size: 24px; }
-  #settings label { display: block; margin: 13px 0 4px; color: var(--sub); }
-  #settings input[type=number], #settings select { width: 100%; padding: 6px; background: #1b2230; color: #fff;
-    border: 1px solid #2c3547; border-radius: 6px; font-size: 18px; }
-  #settings input[type=range] { width: 100%; }
-  #settings button { margin: 6px 6px 0 0; padding: 7px 12px; background: #1b2230; color: #fff; border: 1px solid #2c3547;
-    border-radius: 6px; cursor: pointer; font-size: 17px; }
-  #settings .note { color: #9aa4b5; font-size: 15px; margin-top: 4px; line-height: 1.5; }
-  #log { margin-top: 12px; background: #000; color: #9be38f; font: 12px Consolas, monospace; height: 150px; overflow-y: auto;
-    padding: 6px; white-space: pre-wrap; border-radius: 6px; }
-  #error { position: fixed; left: 0; right: 0; top: 0; background: #b3261e; color: #fff; padding: 14px 20px; font-size: 22px;
-    display: none; z-index: 20; white-space: pre-wrap; }
-</style>
+<link rel="stylesheet" href="css/style.css">
+<!-- three.js は同梱（オフライン）。"three" と "three/addons/" をここで割り当てる -->
+<script type="importmap">
+{ "imports": { "three": "./lib/three/build/three.module.min.js", "three/addons/": "./lib/three/addons/" } }
+</script>
 </head>
-<body>
+<body data-hud="loading">
 <div id="error"></div>
 <canvas id="game"></canvas>
 
-<div id="hudTime" class="hud"><div class="t" id="tTime">0.00</div><div class="g" id="tGoal"></div></div>
-<div id="progWrap"><div id="prog"></div></div>
-<div id="hudRight" class="hud"><div id="cones"></div></div>
-<div id="hudSpeed" class="hud"><div class="rpm"><div class="bar"><div id="rpmBar"></div></div><span id="rpm">0</span> rpm</div><span class="v" id="speed">0</span> <span class="u">km/h</span></div>
+<!-- レース中の表示 -->
+<div id="hudTime" class="hud panel">
+  <div class="course" id="hudCourse"></div>
+  <div class="t" id="tTime">0.00</div>
+  <div class="g"><span id="tGoal"></span><span class="lap" id="hudLap"></span></div>
+</div>
+<canvas id="map" class="hud"></canvas>
+<div id="progWrap" class="hud"><div id="prog"></div></div>
+<div id="hudRight" class="hud"><div id="hudCones"></div><div id="hudWarn"></div></div>
+<div id="hudSpeed" class="hud panel">
+  <div class="rpm"><div class="bar"><div id="rpmBar"></div></div><span id="rpm">0</span> rpm</div>
+  <span class="v" id="speed">0</span> <span class="u">km/h</span>
+</div>
 <div id="camWrap"><canvas id="cam"></canvas><div id="camLabel">-</div></div>
 
+<!-- 真ん中の大きな文字・スタートランプ・ランキング -->
 <div id="center">
   <div id="lights"><div class="l"></div><div class="l"></div><div class="l"></div><div class="l"></div><div class="l"></div></div>
   <div id="big"></div>
@@ -85,6 +37,10 @@
   <div id="holdBar"><div></div></div>
   <div id="card"></div>
 </div>
+
+<!-- コース選択（js/ui/course-select.js が中身を作る） -->
+<div id="select"></div>
+
 <button id="gear" title="設定（Sキー）">⚙</button>
 <div id="fsHint">画面をクリックすると全画面になります（Esc で解除 ・ F で再び全画面）</div>
 <div id="status"><span id="stModel">モデル: 読み込み中…</span> ・ <span id="stFps">FPS -</span> ・ <span id="stSerial" class="ng">景品機: 未接続</span> ・ <span id="stStats"></span></div>
@@ -94,25 +50,31 @@
   <label>カメラ</label>
   <select id="camSel"></select>
 
+  <label><input type="checkbox" id="courseSelect"> コース選択画面を出す（OFF なら下のコースで固定）</label>
+  <label>コース</label>
+  <select id="courseId"></select>
+
   <label>コースの長さ</label>
   <select id="course">
     <option value="short">みじかい</option>
     <option value="normal">ふつう</option>
     <option value="long">ながい</option>
   </select>
+  <div class="note">サーキットは「ふつう」で 1 周、「ながい」で 2 周、「みじかい」で半周。</div>
 
   <label>最高時速: <b id="maxKmhVal"></b></label>
   <input type="range" id="maxKmh" min="40" max="300" step="10">
   <div class="note">40〜110 km/h。車はデンソー製モータ 36 kW・減速比 10:1・14 インチタイヤで、モータ 11000 rpm の 110 km/h が最高速。<br>
-    小さい子向けに遅くしたいときは下げる（スピードリミッターとして働く）。</div>
+    小さい子向けに遅くしたいときは下げる（スピードリミッターとして働く）。カーブの手前では自動でブレーキがかかります。</div>
 
   <label>目標タイム [秒]（これより速くゴールすると景品）</label>
-  <input type="number" id="target" min="5" max="300" step="1">
-  <div class="note">このコース・速度の理論最速 ≒ <b id="ideal"></b> 秒。コーン1本ごとに +1秒、コースアウトすると大きく減速します。<br>
+  <table id="targets" class="targets"></table>
+  <div class="note">コース・長さ・速度・コーンを変えると「理論最速 ＋20%」に自動で設定。コーン1本ごとに +1秒、コースアウトすると大きく減速します。<br>
     目安：理論最速 ＋10% で「上手な人だけ」、＋20% で「ふつうに運転できれば」、＋40% で「ほとんどの人」が景品。</div>
 
   <label>制限時間 [秒]（これを過ぎると終了）</label>
   <input type="number" id="limit" min="20" max="600" step="5">
+  <div class="note warn" id="limitNote"></div>
 
   <label>ハンドル感度（何度回すとフルに曲がるか）: <b id="sensVal"></b></label>
   <input type="range" id="sens" min="20" max="70" step="5">
@@ -124,6 +86,15 @@
   <label><input type="checkbox" id="cones"> コーン（障害物）を置く</label>
   <label><input type="checkbox" id="sound"> 音（走行音・効果音）</label>
   <label><input type="checkbox" id="mirror"> カメラ映像を左右反転（鏡のように）</label>
+
+  <label>画質</label>
+  <select id="quality">
+    <option value="auto">自動（重いときは自動で下げる）</option>
+    <option value="3">最高</option>
+    <option value="2">高</option>
+    <option value="1">中</option>
+    <option value="0">低（軽量）</option>
+  </select>
 
   <label>景品の残り数（0 で景品切れ表示。-1 = 数えない）</label>
   <input type="number" id="stock" min="-1">
@@ -139,439 +110,13 @@
   <button id="btnReset">集計とランキングをリセット</button>
 
   <div class="note" style="margin-top:14px">
-    キー操作: Space = スタート / S = 設定 / F = 全画面 / Esc = 全画面解除 / ← → = キーボードで運転（予備）/ A = 自動運転（デモ・テスト）/ Q = レース中止
+    キー操作: Space = スタート / ← → / 1〜4 = コースを選ぶ / Enter = 決定 / S = 設定 / F = 全画面 / Esc = 全画面解除 / ← → = キーボードで運転（予備）/ A = 自動運転（デモ・テスト）/ Q = レース中止
   </div>
   <div id="log"></div>
 </div>
 
 <video id="video" playsinline muted style="display:none"></video>
 
-<script type="module">
-import { FilesetResolver, PoseLandmarker } from './lib/vision_bundle.mjs';
-import { Race, MAX_SPEED, KMH_AT_MAX, TOP_KMH, CAR, UNITS_PER_M, rpmToMs } from './game.js';
-import { DriveSound } from './sound.js';
-import { readWheel, angleToSteer } from './wheel.js';
-
-const START_HOLD_MS = 1500;   // ハンドルを握ってこの時間キープでスタート
-const RESULT_MS = 7000;       // 結果表示の時間
-const AWAY_MS = 8000;         // レース中に人がいなくなったら中止するまでの時間
-const CONE_PENALTY = 1.0;     // コーン1本あたりのペナルティ[秒]
-
-const $ = (id) => document.getElementById(id);
-const video = $('video'), cam = $('cam'), cctx = cam.getContext('2d');
-const gcv = $('game'), gctx = gcv.getContext('2d');
-
-// ---------- エラー・ログ ----------
-function showError(msg) { const e = $('error'); e.textContent = '⚠ ' + msg; e.style.display = 'block'; log('ERROR ' + msg); }
-window.addEventListener('error', (e) => showError(e.message));
-window.addEventListener('unhandledrejection', (e) => showError(String(e.reason && e.reason.message || e.reason)));
-function log(msg) { const el = $('log'); el.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`; el.scrollTop = el.scrollHeight; console.log(msg); }
-
-// ---------- 設定・集計（ブラウザに保存） ----------
-const SKEY = 'air-handle-settings', STATKEY = 'air-handle-stats';
-const TOP = Math.round(TOP_KMH / 10) * 10;   // 設定できる最高時速（モータの最高回転数で決まる。110 km/h。実際の頭打ちは 109.9 km/h）
-const DEF = { course: 'normal', maxKmh: TOP, target: 0, limit: 90, sens: 45, assist: 30, cones: true, sound: true, mirror: true, stock: -1, camId: '' };
-const settings = Object.assign({}, DEF, load(SKEY));
-delete settings.topSpeed;
-if (!(settings.maxKmh <= TOP)) settings.maxKmh = TOP;   // 旧版（最高 300 km/h）の設定は、モータの最高速に合わせる
-const topFactor = () => settings.maxKmh / KMH_AT_MAX;
-const stats = Object.assign({ plays: 0, finishes: 0, prizes: 0, ranking: [] }, load(STATKEY));
-function load(k) { try { return JSON.parse(localStorage.getItem(k)) || {}; } catch { return {}; } }
-function save() { try { localStorage.setItem(SKEY, JSON.stringify(settings)); localStorage.setItem(STATKEY, JSON.stringify(stats)); } catch {} }
-
-const race = new Race();
-race.cx = 0.42;   // 右下のカメラ画面と重ならないよう、道路と車を少し左に寄せる
-let builtKey = '';
-function rebuild() {
-  const key = settings.course + settings.cones;
-  if (key === builtKey) return;
-  race.build({ length: settings.course, cones: settings.cones });
-  builtKey = key;
-}
-function idealTime() { return race.idealTime(topFactor()); }
-
-function bindSettings() {
-  $('maxKmh').max = TOP;
-  const ids = ['course', 'maxKmh', 'target', 'limit', 'sens', 'assist', 'stock'];
-  ids.forEach((id) => { $(id).value = settings[id]; });
-  ['cones', 'sound', 'mirror'].forEach((id) => { $(id).checked = settings[id]; });
-  const upd = (ev) => {
-    settings.course = $('course').value;
-    settings.maxKmh = Math.max(40, Math.min(TOP, parseInt($('maxKmh').value) || TOP));
-    $('maxKmhVal').textContent = `${settings.maxKmh} km/h`;
-    settings.limit = Math.max(20, parseInt($('limit').value) || 90);
-    settings.sens = parseInt($('sens').value); settings.assist = parseInt($('assist').value);
-    settings.stock = parseInt($('stock').value); if (isNaN(settings.stock)) settings.stock = -1;
-    ['cones', 'sound', 'mirror'].forEach((id) => { settings[id] = $(id).checked; });
-    rebuild();
-    const ideal = idealTime();
-    $('ideal').textContent = ideal.toFixed(1);
-    // コースや速度を変えたとき、または未設定なら目標タイムを自動で「理論最速 ＋20%」にする
-    if (!settings.target || (ev && ['course', 'maxKmh', 'cones'].includes(ev.target.id))) {
-      settings.target = Math.ceil(ideal * 1.2); $('target').value = settings.target;
-    } else settings.target = Math.max(5, parseInt($('target').value) || settings.target);
-    $('sensVal').textContent = `${settings.sens}°`;
-    $('assistVal').textContent = settings.assist === 0 ? 'なし' : `${settings.assist}%`;
-    save(); drawStats();
-  };
-  [...ids, 'cones', 'sound', 'mirror'].forEach((id) => $(id).addEventListener('input', upd));
-  upd();
-}
-function drawStats() {
-  $('stStats').textContent = `挑戦 ${stats.plays} 人 / 景品 ${stats.prizes} 個` + (settings.stock >= 0 ? ` / 残り ${settings.stock}` : '');
-  $('statsDetail').textContent = `挑戦 ${stats.plays} 人、完走 ${stats.finishes} 人、景品 ${stats.prizes} 個`;
-  $('tGoal').textContent = `目標 ${settings.target.toFixed ? settings.target.toFixed(0) : settings.target} 秒`;
-}
-
-// ---------- 音（EV のモーター音＋効果音） ----------
-let actx = null, motor = null;
-function audio() { if (!actx) { try { actx = new AudioContext(); } catch {} } return actx; }
-function beep(freq, ms, type = 'square', vol = 0.15, delay = 0) {
-  if (!settings.sound || !audio()) return;
-  const o = actx.createOscillator(), g = actx.createGain();
-  o.type = type; o.frequency.value = freq; o.connect(g); g.connect(actx.destination);
-  const t = actx.currentTime + delay / 1000;
-  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + ms / 1000); o.start(t); o.stop(t + ms / 1000 + 0.02);
-}
-// 走行音（モータ回転数・トルク・車速から合成。sound.js）
-let drive = null;
-function driveSound() { if (!drive && audio()) { try { drive = new DriveSound(actx); } catch (e) { log('走行音を作れません: ' + e.message); } } return drive; }
-const fanfare = () => [523, 659, 784, 1047, 784, 1047].forEach((f, i) => beep(f, 260, 'square', 0.15, i * 140));
-const unlockAudio = () => { if (audio()) actx.resume(); };
-document.addEventListener('pointerdown', unlockAudio); document.addEventListener('keydown', unlockAudio);
-
-// ---------- 景品機（ESP32）: Web Serial ----------
-let port = null, writer = null;
-async function serialOpen(p) {
-  try {
-    await p.open({ baudRate: 115200 });
-    port = p; writer = p.writable.getWriter(); setSerialStatus(true); log('景品機に接続しました');
-    readLoop(p); setTimeout(() => serialSend('PING'), 1500);
-  } catch (e) { showError('景品機に接続できません: ' + e.message + '\n（Arduino IDE のシリアルモニタが開いていたら閉じてください）'); }
-}
-async function readLoop(p) {
-  const dec = new TextDecoder(); let buf = '';
-  while (p.readable) {
-    const reader = p.readable.getReader();
-    try {
-      for (;;) {
-        const { value, done } = await reader.read(); if (done) break;
-        buf += dec.decode(value); let i;
-        while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1); if (line) onSerialLine(line); }
-      }
-    } catch (e) { log('受信エラー: ' + e.message); break; } finally { reader.releaseLock(); }
-  }
-  setSerialStatus(false); port = null; writer = null;
-}
-function onSerialLine(line) { if (!line.startsWith('STAT')) log('ESP32 > ' + line); if (line === 'BTN') startGame('button'); }
-async function serialSend(cmd) {
-  if (!writer) return false;
-  try { await writer.write(new TextEncoder().encode(cmd + '\n')); log('ESP32 < ' + cmd); return true; } catch (e) { log('送信エラー: ' + e.message); return false; }
-}
-function setSerialStatus(ok) { $('stSerial').textContent = ok ? '景品機: 接続中' : '景品機: 未接続'; $('stSerial').className = ok ? 'ok' : 'ng'; }
-$('btnSerial').onclick = async () => {
-  if (!('serial' in navigator)) return showError('このブラウザは Web Serial に対応していません。Chrome か Edge で開いてください。');
-  try { await serialOpen(await navigator.serial.requestPort()); } catch { log('ポート選択キャンセル'); }
-};
-$('btnTest').onclick = () => serialSend('PRIZE');
-$('btnPing').onclick = () => serialSend('PING');
-$('btnReset').onclick = () => { if (confirm('集計とランキングをリセットしますか？')) { Object.assign(stats, { plays: 0, finishes: 0, prizes: 0, ranking: [] }); save(); drawStats(); } };
-async function autoConnect() {
-  if (!('serial' in navigator)) return;
-  const ports = await navigator.serial.getPorts(); if (ports.length) serialOpen(ports[0]);
-  navigator.serial.addEventListener('connect', (e) => { if (!port) serialOpen(e.target); });
-}
-
-// ---------- カメラ ----------
-let stream = null;
-async function startCamera() {
-  if (stream) stream.getTracks().forEach((t) => t.stop());
-  const v = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30, max: 30 } };
-  if (settings.camId) v.deviceId = { exact: settings.camId };
-  try { stream = await navigator.mediaDevices.getUserMedia({ video: v, audio: false }); }
-  catch (e) {
-    if (settings.camId) { settings.camId = ''; save(); return startCamera(); }
-    throw new Error('カメラを開けません: ' + e.message + '（他のアプリがカメラを使っていないか、カメラの許可を確認）');
-  }
-  video.srcObject = stream; await video.play();
-  cam.width = video.videoWidth; cam.height = video.videoHeight;
-  const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
-  const cur = stream.getVideoTracks()[0].getSettings().deviceId;
-  $('camSel').innerHTML = devs.map((d, i) => `<option value="${d.deviceId}" ${d.deviceId === cur ? 'selected' : ''}>${d.label || 'カメラ ' + (i + 1)}</option>`).join('');
-  log(`カメラ: ${cam.width}x${cam.height}`);
-}
-$('camSel').onchange = () => { settings.camId = $('camSel').value; save(); startCamera().catch((e) => showError(e.message)); };
-window.addEventListener('beforeunload', () => { if (stream) stream.getTracks().forEach((t) => t.stop()); });
-
-// ---------- 骨格認識モデル ----------
-let landmarker = null;
-async function loadModel() {
-  const fileset = await FilesetResolver.forVisionTasks('./lib/wasm');
-  const opts = (delegate) => ({
-    baseOptions: { modelAssetPath: './models/pose_landmarker_lite.task', delegate },
-    runningMode: 'VIDEO', numPoses: 1, minPoseDetectionConfidence: 0.5, minPosePresenceConfidence: 0.5, minTrackingConfidence: 0.5,
-  });
-  try { landmarker = await PoseLandmarker.createFromOptions(fileset, opts('GPU')); $('stModel').textContent = 'モデル: OK (GPU)'; }
-  catch (e) { log('GPU で起動できないので CPU に切り替え: ' + e.message);
-    landmarker = await PoseLandmarker.createFromOptions(fileset, opts('CPU')); $('stModel').textContent = 'モデル: OK (CPU)'; }
-}
-
-// ---------- 入力（ハンドル・キーボード・自動運転） ----------
-let wheel = { held: false }, steerSmooth = 0, lastHeldAt = 0;
-const keys = { left: false, right: false }; let lastKeyAt = -1e9, autopilot = false;
-
-function readInput(now) {
-  let steer = 0, active = false;
-  if (autopilot) { steer = race.autopilot(); active = true; }
-  else if (keys.left || keys.right || now - lastKeyAt < 1500) { steer = (keys.right ? 1 : 0) - (keys.left ? 1 : 0); active = true; }
-  else if (wheel.held) { steer = angleToSteer(wheel.angle, settings.sens); active = true; }
-  steerSmooth += (steer - steerSmooth) * 0.35;      // 手ぶれを抑える
-  return { steer: steerSmooth, throttle: active ? 1 : 0, active };
-}
-
-// ---------- ゲーム進行 ----------
-let t0hit = -1e9;
-let state = 'loading', t0 = 0, holdStart = 0, raceTime = 0, lightsOutAt = 0, result = null, lastEvent = '';
-
-function setBig(big, small = '', color = '') {
-  const b = $('big');
-  if (b.textContent !== big) { b.textContent = big; b.classList.remove('pop'); void b.offsetWidth; if (big) b.classList.add('pop'); }
-  b.style.color = color; $('small').textContent = small;
-}
-function showCard(html) { const c = $('card'); c.innerHTML = html || ''; c.style.display = html ? 'block' : 'none'; }
-function rankingHtml(highlight) {
-  const rows = stats.ranking.slice(0, 5).map((r, i) =>
-    `<tr style="${r.id === highlight ? 'color:var(--win);font-weight:bold' : ''}"><td>${i + 1}位</td><td>${r.time.toFixed(2)} 秒</td><td>${r.cones ? 'コーン' + r.cones : ''}</td></tr>`).join('');
-  return rows ? `<div>🏆 本日のランキング</div><table>${rows}</table>` : '';
-}
-function setLights(n) { [...document.querySelectorAll('#lights .l')].forEach((l, i) => l.classList.toggle('on', i < n)); }
-
-function toIdle() {
-  state = 'idle'; holdStart = 0; race.reset(); autopilot = false;
-  $('lights').style.display = 'none';
-}
-function startGame(by) {
-  if (state !== 'idle') return;
-  if (settings.stock === 0) { setBig('景品切れ', 'スタッフを呼んでね'); return; }
-  stats.plays++; save(); drawStats(); log(`スタート (${by})`);
-  race.reset(); steerSmooth = 0; autopilot = false;
-  state = 'lights'; t0 = performance.now();
-  lightsOutAt = 5 * 600 + 400 + Math.random() * 800;    // F1 と同じく、消えるタイミングは毎回少しちがう
-  $('lights').style.display = 'flex'; setLights(0); showCard(''); $('holdBar').style.display = 'none';
-  serialSend('EV:START');
-}
-function finishRace(ok, reason) {
-  t0 = performance.now(); state = 'result';
-  if (ok) {
-    stats.finishes++;
-    const id = Date.now();
-    stats.ranking.push({ id, time: raceTime, cones: race.coneHits });
-    stats.ranking.sort((a, b) => a.time - b.time); stats.ranking = stats.ranking.slice(0, 50);
-    const rank = stats.ranking.findIndex((r) => r.id === id) + 1;
-    const prize = raceTime <= settings.target && settings.stock !== 0;
-    if (prize) {
-      stats.prizes++; if (settings.stock > 0) { settings.stock--; $('stock').value = settings.stock; }
-      setBig('🎉 景品ゲット！', `タイム ${raceTime.toFixed(2)} 秒\n（目標 ${settings.target} 秒）`, 'var(--win)');
-      fanfare(); serialSend('PRIZE');
-    } else {
-      setBig('ゴール！', `タイム ${raceTime.toFixed(2)} 秒\n目標まで あと ${(raceTime - settings.target).toFixed(2)} 秒！`, '#fff');
-      beep(660, 300, 'triangle'); serialSend('EV:LOSE');
-    }
-    showCard(`<div>本日 ${rank} 位 ・ コーン ${race.coneHits} 本</div>` + rankingHtml(id));
-  } else {
-    setBig(reason === 'away' ? '中止' : '時間切れ', reason === 'away' ? 'ハンドルから手がはなれました' : 'また挑戦してね！', 'var(--ng)');
-    beep(330, 500, 'triangle'); serialSend('EV:LOSE'); showCard('');
-  }
-  log(`結果: ${ok ? raceTime.toFixed(2) + '秒' : reason} コーン${race.coneHits} 木${race.crashes}`);
-  save(); drawStats();
-}
-
-function update(now, dt) {
-  const el = now - t0;
-  const input = readInput(now);
-  const opts = { topFactor: topFactor(), assist: settings.assist / 100 };
-  if (input.active) lastHeldAt = now;
-  $('holdBar').style.display = 'none';
-
-  switch (state) {
-    case 'idle': {
-      // 待機中は自動運転のデモ走行
-      race.update(dt, race.autopilot(), 1, { topFactor: 0.7, assist: 0.5 });
-      if (race.finished) race.reset();
-      race.events.length = 0;
-      if (wheel.ready || keys.left || keys.right) {
-        if (!holdStart) holdStart = now;
-        const p = Math.min(1, (now - holdStart) / START_HOLD_MS);
-        $('holdBar').style.display = 'block'; $('holdBar').firstElementChild.style.width = (p * 100) + '%';
-        setBig('エアハンドル\nドライブ', 'そのまま にぎっていてね…');
-        if (p >= 1) startGame('wheel');
-      } else {
-        holdStart = 0;
-        setBig('エアハンドル\nドライブ', settings.stock === 0 ? '景品切れ（スタッフを呼んでね）'
-          : `🙌 ハンドルをにぎってスタート！\n${settings.target} 秒以内にゴールで景品 🎁`);
-      }
-      showCard(rankingHtml());
-      break;
-    }
-    case 'lights': {
-      const n = Math.min(5, Math.floor(el / 600));
-      if (el < lightsOutAt) {
-        if (n !== setLights.last) { setLights(n); setLights.last = n; if (n > 0) beep(440, 150); }
-        setBig('', n < 5 ? 'ハンドルをにぎって準備…' : 'ライトが消えたらスタート！');
-      } else {
-        setLights(0); setLights.last = -1; $('lights').style.display = 'none';
-        setBig('GO!', '', 'var(--ok)'); beep(880, 400);
-        state = 'race'; t0 = now; raceTime = 0; lastHeldAt = now;
-      }
-      break;
-    }
-    case 'race': {
-      if (el > 900 && now - t0hit > 900) setBig('', input.active ? '' : '✋ ハンドルをにぎって！');
-      race.update(dt, input.steer, input.throttle, opts);
-      raceTime = el / 1000 + race.coneHits * CONE_PENALTY;
-      for (const ev of race.events) {
-        if (ev === 'cone') { if (settings.sound) driveSound()?.cone(); setBig('+1秒', 'コーンにぶつかった！', 'var(--ng)'); t0hit = now; }
-        if (ev === 'crash') { if (settings.sound) driveSound()?.crash(); setBig('ガシャン！', 'ガードレールにぶつかった', 'var(--ng)'); t0hit = now; }
-      }
-      race.events.length = 0;
-      if (race.finished) finishRace(true);
-      else if (raceTime > settings.limit) finishRace(false, 'limit');
-      else if (now - lastHeldAt > AWAY_MS) finishRace(false, 'away');
-      break;
-    }
-    case 'result': {
-      race.update(dt, 0, 0, opts); race.events.length = 0;
-      if (el > RESULT_MS) { showCard(''); toIdle(); }
-      break;
-    }
-  }
-  const ds = (state === 'race' || state === 'result') && settings.sound ? driveSound() : drive;
-  if (ds) ds.update({ on: settings.sound && (state === 'race' || state === 'result'), rpm: race.rpm, torque: race.torque, maxTorque: CAR.torque,
-    speed: race.speed / UNITS_PER_M, topSpeed: rpmToMs(CAR.maxRpm), surface: race.surface, onKerb: race.onKerb });
-}
-
-function drawHud() {
-  const racing = state === 'race' || state === 'result';
-  $('tTime').textContent = (racing ? raceTime : 0).toFixed(2);
-  $('tTime').style.color = racing && raceTime > settings.target ? 'var(--ng)' : '#fff';
-  $('speed').textContent = Math.round(race.speed / MAX_SPEED * KMH_AT_MAX);
-  $('rpm').textContent = Math.round(race.rpm / 10) * 10;
-  $('rpmBar').style.width = Math.min(100, race.rpm / CAR.maxRpm * 100) + '%';
-  $('prog').style.width = (race.progress * 100) + '%';
-  $('cones').textContent = racing ? `コーン ${race.coneHits} 本` + (race.offroad ? '　⚠ コースアウト' : '') : '';
-  $('camLabel').textContent = wheel.held ? `ハンドル ${Math.round(wheel.angle)}°` : '両手を見せてね';
-  $('camLabel').style.color = wheel.held ? 'var(--ok)' : 'var(--ng)';
-}
-
-// ---------- カメラ画面（骨格とハンドル） ----------
-function drawCam(res) {
-  const W = cam.width, H = cam.height;
-  cctx.save();
-  if (settings.mirror) { cctx.translate(W, 0); cctx.scale(-1, 1); }
-  cctx.drawImage(video, 0, 0, W, H);
-  cctx.restore();
-  const lm = res && res.landmarks && res.landmarks[0];
-  wheel = readWheel(lm, W, H, settings.mirror);
-  if (wheel.held) lastHeldAt = Math.max(lastHeldAt, performance.now());
-  if (!lm) return;
-  const P = (i) => ({ x: (settings.mirror ? 1 - lm[i].x : lm[i].x) * W, y: lm[i].y * H });
-  cctx.strokeStyle = '#ffffff'; cctx.lineWidth = 4; cctx.beginPath();
-  [[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24]].forEach(([a, b]) => {
-    if ((lm[a].visibility ?? 1) < 0.5 || (lm[b].visibility ?? 1) < 0.5) return;
-    const p = P(a), q = P(b); cctx.moveTo(p.x, p.y); cctx.lineTo(q.x, q.y);
-  });
-  cctx.stroke();
-  if (wheel.left) {
-    // 見えないハンドルを描く
-    const { center: c, radius: r } = wheel;
-    cctx.save(); cctx.translate(c.x, c.y); cctx.rotate(wheel.angle * Math.PI / 180);
-    cctx.strokeStyle = wheel.held ? '#7ee787' : '#999'; cctx.lineWidth = 10;
-    cctx.beginPath(); cctx.arc(0, 0, r, 0, Math.PI * 2); cctx.stroke();
-    cctx.lineWidth = 7; cctx.beginPath(); cctx.moveTo(-r, 0); cctx.lineTo(r, 0); cctx.moveTo(0, 0); cctx.lineTo(0, r); cctx.stroke();
-    cctx.restore();
-    cctx.fillStyle = '#ffcf3f';
-    [wheel.left, wheel.right].forEach((p) => { cctx.beginPath(); cctx.arc(p.x, p.y, 12, 0, Math.PI * 2); cctx.fill(); });
-  }
-}
-
-// ---------- メインループ ----------
-let lastVideoTime = -1, fpsN = 0, fpsT = 0, lastFrame = performance.now(), drawN = 0, slowSec = 0;
-function resize() { gcv.width = Math.min(window.innerWidth, 1920); gcv.height = Math.min(window.innerHeight, 1080); }
-window.addEventListener('resize', resize);
-
-function loop() {
-  const now = performance.now();
-  const dt = Math.min(0.05, (now - lastFrame) / 1000); lastFrame = now;
-  if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
-    lastVideoTime = video.currentTime;
-    let res = null;
-    try { res = landmarker.detectForVideo(video, now); } catch (e) { log('認識エラー: ' + e.message); }
-    drawCam(res); fpsN++;
-  }
-  drawN++;
-  if (now - fpsT > 1000) {
-    $('stFps').textContent = `認識 ${fpsN} / 画面 ${drawN} FPS` + (race.quality ? '' : ' 軽量');
-    // 画面が 3 秒続けて 30 FPS を下回ったら、雲や遠くの林を省く軽量モードにする
-    slowSec = drawN < 30 ? slowSec + 1 : 0;
-    if (slowSec >= 3 && race.quality) { race.quality = 0; log('描画が重いので軽量モードに切り替えました'); }
-    fpsN = 0; drawN = 0; fpsT = now;
-  }
-  update(now, dt);
-  race.showMap = state !== 'idle';   // 待機中はタイトルと重なるのでコースマップを出さない
-  race.render(gctx, gcv.width, gcv.height);
-  drawHud();
-  requestAnimationFrame(loop);
-}
-
-// ---------- キー操作 ----------
-document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-  if (e.code === 'Space') { e.preventDefault(); startGame('key'); }
-  else if (e.key === 's' || e.key === 'S') $('settings').classList.toggle('show');
-  else if (e.key === 'f' || e.key === 'F') { document.fullscreenElement ? document.exitFullscreen() : enterFullscreen(); }
-  else if (e.key === 'a' || e.key === 'A') { autopilot = !autopilot; log('自動運転 ' + (autopilot ? 'ON' : 'OFF')); }
-  else if (e.key === 'Escape') { if (document.fullscreenElement) document.exitFullscreen(); }   // Esc = 全画面解除
-  else if ((e.key === 'q' || e.key === 'Q') && (state === 'race' || state === 'lights')) { $('lights').style.display = 'none'; finishRace(false, 'away'); }
-  else if (e.key === 'ArrowLeft') { keys.left = true; lastKeyAt = performance.now(); }
-  else if (e.key === 'ArrowRight') { keys.right = true; lastKeyAt = performance.now(); }
-});
-document.addEventListener('keyup', (e) => {
-  if (e.key === 'ArrowLeft') { keys.left = false; lastKeyAt = performance.now(); }
-  if (e.key === 'ArrowRight') { keys.right = false; lastKeyAt = performance.now(); }
-});
-$('gear').onclick = () => $('settings').classList.toggle('show');
-
-// ---------- 全画面 ----------
-// 起動_全画面.bat で開いたとき（?fs=1）は、最初のクリック/キーで全画面にする（ブラウザの決まりで操作が必要）。
-// 解除は Esc（ブラウザ標準）。もう一度全画面にするときは F キー。
-const wantFs = new URLSearchParams(location.search).has('fs');
-let fsDone = false;
-function enterFullscreen() { document.documentElement.requestFullscreen().catch((e) => log('全画面にできません: ' + e.message)); }
-function updateFsHint() { $('fsHint').style.display = wantFs && !fsDone && !document.fullscreenElement ? 'block' : 'none'; }
-const autoFs = (e) => {
-  if (!wantFs || fsDone || document.fullscreenElement) return;
-  if (e.type === 'keydown' && ['Escape', 'f', 'F'].includes(e.key)) return;
-  fsDone = true; enterFullscreen();
-};
-document.addEventListener('pointerdown', autoFs); document.addEventListener('keydown', autoFs);
-document.addEventListener('fullscreenchange', () => { if (document.fullscreenElement) fsDone = true; updateFsHint(); });
-updateFsHint();
-
-// ---------- 起動 ----------
-(async () => {
-  if (location.protocol === 'file:') { showError('index.html を直接開いても動きません。フォルダ内の「起動.bat」をダブルクリックしてください。'); return; }
-  resize(); bindSettings(); drawStats();
-  setBig('準備中…', 'カメラとAIを起動しています');
-  race.render(gctx, gcv.width, gcv.height);
-  try { await Promise.all([startCamera(), loadModel()]); }
-  catch (e) { showError(e.message); setBig('起動できません', e.message); return; }
-  autoConnect().catch((e) => log('自動接続失敗: ' + e.message));
-  toIdle(); log('準備完了');
-  requestAnimationFrame(loop);
-})();
-
-// テスト用
-window.__dbg = { race, settings, get state() { return state; }, get raceTime() { return raceTime; }, setAuto: (v) => { autopilot = v; } };
-</script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>

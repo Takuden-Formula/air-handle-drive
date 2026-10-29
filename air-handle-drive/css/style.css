@@ -1,0 +1,136 @@
+/* エアハンドル・ドライブ 画面のデザイン（HUD・タイトル・コース選択・設定） */
+:root {
+  --camW: min(36vw, 64vh); --text: #fff; --sub: #c7d2e0; --win: #ffcf3f; --ok: #7ee787; --ng: #ff6b6b;
+  --panel: rgba(8, 13, 22, .72); --panel2: rgba(8, 13, 22, .45); --accent: #4fc3f7; --line: rgba(255, 255, 255, .16);
+  --num: "Bahnschrift", "DIN Alternate", "Segoe UI", "Roboto Condensed", "Arial Narrow", sans-serif;
+  --jp: "Meiryo", "Yu Gothic UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #000; color: var(--text); overflow: hidden; font-family: var(--jp); }
+#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* ---------- HUD ---------- */
+.hud { position: fixed; z-index: 2; text-shadow: 0 2px 4px rgba(0,0,0,.6); pointer-events: none; transition: opacity .3s; }
+.panel { background: linear-gradient(100deg, var(--panel) 0%, var(--panel2) 100%); border-left: 4px solid var(--accent); border-radius: 4px 14px 14px 4px; }
+body:not([data-hud="race"]) #hudTime, body:not([data-hud="race"]) #progWrap, body:not([data-hud="race"]) #hudSpeed,
+body:not([data-hud="race"]) #hudRight { opacity: 0; }
+#hudTime { top: 14px; left: 18px; padding: 8px 22px 10px 16px; min-width: min(330px, 24vw); }
+#hudTime .course { font-size: min(20px, 1.5vw); font-weight: bold; color: var(--sub); letter-spacing: .08em; }
+#hudTime .t { font-family: var(--num); font-size: min(92px, 7vw); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; letter-spacing: .01em; }
+#hudTime .g { font-size: min(30px, 2.4vw); font-weight: bold; color: var(--sub); margin-top: 4px; display: flex; gap: 16px; }
+#hudTime .lap { color: var(--win); font-family: var(--num); }
+#map { left: 18px; top: calc(min(92px, 7vw) + min(30px, 2.4vw) + min(20px, 1.5vw) + 52px); width: min(230px, 15vw); height: min(230px, 15vw);
+  display: none; background: radial-gradient(circle at 50% 50%, rgba(8,13,22,.55), rgba(8,13,22,.3)); border-radius: 14px; border: 1px solid var(--line); }
+#hudRight { top: 16px; right: 20px; text-align: right; font-size: min(38px, 3vw); font-weight: bold; }
+#hudWarn { color: var(--ng); font-size: min(34px, 2.6vw); margin-top: 4px; }
+#hudSpeed { left: 18px; bottom: 16px; padding: 8px 26px 10px 16px; }
+#hudSpeed .v { font-family: var(--num); font-size: min(124px, 9.4vw); font-weight: 700; font-variant-numeric: tabular-nums; line-height: .95; }
+#hudSpeed .u { font-size: min(34px, 2.6vw); font-weight: bold; color: var(--sub); }
+#hudSpeed .rpm { font-family: var(--num); font-size: min(24px, 1.9vw); font-weight: bold; color: var(--sub); font-variant-numeric: tabular-nums; margin-bottom: 6px; }
+#hudSpeed .bar { width: min(300px, 22vw); height: 14px; transform: skewX(-20deg); background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.35); overflow: hidden; margin-bottom: 3px; }
+#rpmBar { height: 100%; width: 0; background: linear-gradient(90deg, #4fc3f7 0%, #7ee787 45%, #ffcf3f 78%, #ff5252 100%); background-size: min(300px, 22vw) 100%; }
+#progWrap { top: 20px; left: 50%; transform: translateX(-50%); width: min(34vw, 560px); height: 14px; background: rgba(0,0,0,.45);
+  border-radius: 7px; border: 1px solid rgba(255,255,255,.5); }
+#prog { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #ffcf3f); border-radius: 7px; box-shadow: 0 0 12px var(--accent); }
+#progWrap::after { content: "🏁"; position: absolute; right: -40px; top: -16px; font-size: 32px; }
+
+/* ---------- カメラ画面 ---------- */
+#camWrap { position: fixed; z-index: 2; right: 16px; bottom: 16px; width: var(--camW); border-radius: 16px; overflow: hidden;
+  border: 3px solid rgba(255,255,255,.7); background: #000; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+#cam { width: 100%; display: block; }
+#camLabel { position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: min(34px, 2.6vw); font-weight: bold; padding: 4px; background: rgba(0,0,0,.55); }
+
+/* ---------- 真ん中 ---------- */
+#center { position: fixed; z-index: 3; inset: 0; padding-right: calc(var(--camW) + 16px); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  pointer-events: none; text-align: center; }
+body[data-hud="select"] #center { display: none; }
+#big { font-size: min(150px, 8.2vw); font-weight: 900; line-height: 1.08; white-space: pre; letter-spacing: .02em;
+  text-shadow: 0 6px 0 rgba(0,0,0,.45), 0 0 30px rgba(0,0,0,.55); }
+body[data-hud="idle"] #big { background: linear-gradient(180deg, #fff 30%, #9fd8ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent !important;
+  filter: drop-shadow(0 6px 0 rgba(0,0,0,.45)) drop-shadow(0 0 24px rgba(30,120,255,.45)); text-shadow: none; }
+#small { font-size: min(52px, 3.6vw); line-height: 1.3; font-weight: bold; max-width: 100%; white-space: pre-line; text-shadow: 0 3px 0 rgba(0,0,0,.7), 0 0 18px rgba(0,0,0,.6); margin-top: 10px; }
+#card { margin-top: 18px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 30px; font-size: min(32px, 2.5vw); font-weight: bold; display: none; min-width: 420px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.45); }
+#card table { margin: 6px auto 0; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+#card td { padding: 2px 18px; }
+#card tr.me { color: var(--win); }
+#card .rk-title span { font-size: .7em; color: var(--sub); margin-left: 12px; }
+#card .rk-me { margin-bottom: 4px; }
+#holdBar { width: min(600px, 50vw); height: 22px; border-radius: 11px; background: rgba(0,0,0,.45); margin-top: 14px; overflow: hidden; display: none; border: 2px solid rgba(255,255,255,.7); }
+#holdBar div { height: 100%; width: 0; background: linear-gradient(90deg, #4fc3f7, var(--ok)); }
+#lights { display: none; gap: 18px; padding: 18px 26px; background: linear-gradient(#1a1c20, #0b0c0e); border-radius: 18px; border: 4px solid #2e3238; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+#lights .l { width: min(104px, 7.6vw); height: min(104px, 7.6vw); border-radius: 50%; background: radial-gradient(circle at 40% 35%, #4a1414, #250707); box-shadow: inset 0 0 14px #000; }
+#lights .l.on { background: radial-gradient(circle at 40% 35%, #ffb3a8, #ff1f1f 45%, #b30000); box-shadow: 0 0 36px #ff1f1f, 0 0 80px rgba(255,0,0,.5); }
+.pop { animation: pop .35s ease-out; }
+@keyframes pop { from { transform: scale(1.6); opacity: .2; } to { transform: scale(1); opacity: 1; } }
+
+/* ---------- コース選択 ---------- */
+#select { position: fixed; inset: 0; z-index: 4; display: none; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2.4vh;
+  padding: 4vh 2vw 0 2vw; pointer-events: auto;
+  background: radial-gradient(ellipse at 50% 40%, rgba(0,0,0,0) 30%, rgba(0,4,12,.55) 100%), linear-gradient(180deg, rgba(0,6,16,.55), rgba(0,0,0,0) 30%, rgba(0,0,0,0) 60%, rgba(0,6,16,.7)); }
+#select.show { display: flex; }
+.sel-title { font-size: min(64px, 4.4vw); font-weight: 900; text-shadow: 0 4px 0 rgba(0,0,0,.5), 0 0 26px rgba(0,0,0,.6); }
+.sel-step { font-family: var(--num); font-size: .45em; background: var(--accent); color: #031018; padding: 4px 12px; border-radius: 6px; margin-right: 18px; vertical-align: middle; letter-spacing: .1em; }
+.sel-cards { display: flex; gap: 1.4vw; align-items: stretch; justify-content: center; width: 100%; }
+.card { position: relative; width: min(22vw, 400px, 40vh); background: linear-gradient(180deg, rgba(14,20,32,.88), rgba(6,10,18,.92)); border-radius: 16px; overflow: hidden;
+  border: 2px solid rgba(255,255,255,.14); transform: scale(.92); opacity: .78; transition: transform .25s cubic-bezier(.2,.9,.3,1.2), opacity .2s, box-shadow .2s, border-color .2s; cursor: pointer; }
+.card.on { transform: scale(1.04); opacity: 1; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent), 0 0 40px var(--accent), 0 16px 40px rgba(0,0,0,.6); }
+.card .thumb { position: relative; aspect-ratio: 16 / 9; background: linear-gradient(135deg, #1b2738, #0b1220); overflow: hidden; }
+.card .thumb img, .card .thumb .ph { width: 100%; height: 100%; display: block; object-fit: cover; }
+.card .num { position: absolute; left: 10px; top: 8px; z-index: 1; font-family: var(--num); font-weight: 700; font-size: min(26px, 1.8vw); background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.4);
+  border-radius: 6px; padding: 0 9px; }
+.card .thumb::after { content: ""; position: absolute; inset: auto 0 0 0; height: 40%; background: linear-gradient(transparent, rgba(6,10,18,.92)); }
+.card .body { padding: 6px 16px 14px; border-top: 4px solid var(--accent); }
+.card .name { font-size: min(36px, 2.4vw); font-weight: 900; line-height: 1.15; white-space: nowrap; }
+.card .name.long { font-size: min(27px, 1.8vw); line-height: 1.6; }
+.card .en { font-family: var(--num); font-size: min(15px, 1.05vw); letter-spacing: .14em; color: var(--accent); font-weight: 700; margin: 2px 0 6px; }
+.card .desc { font-size: min(19px, 1.32vw); color: var(--sub); line-height: 1.45; min-height: 2.9em; }
+.card .meta { display: flex; justify-content: space-between; align-items: baseline; margin-top: 8px; font-size: min(18px, 1.25vw); font-weight: bold; gap: 8px; flex-wrap: wrap; }
+.card .stars { color: var(--win); letter-spacing: .1em; }
+.card .info { color: #e8edf2; }
+.sel-help { display: flex; align-items: center; gap: 2.2vw; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 12px 28px;
+  align-self: flex-start; margin-left: calc((100% - var(--selCam) - 40px) / 2); transform: translateX(-50%); }
+.sel-keys { align-self: flex-start; margin-left: calc((100% - var(--selCam) - 40px) / 2); transform: translateX(-50%); }
+/* コース選択中はカメラ画面を小さくして、カードと重ならないようにする */
+body[data-hud="select"] { --selCam: min(24vw, 42vh); }
+body[data-hud="select"] #camWrap { width: var(--selCam); }
+body:not([data-hud="select"]) { --selCam: 0px; }
+.sel-hint { display: flex; align-items: center; gap: 14px; font-size: min(40px, 2.8vw); color: var(--accent); }
+.sel-hint .arr { animation: nudge 1.2s ease-in-out infinite; }
+.sel-hint .arr:last-child { animation-direction: reverse; }
+@keyframes nudge { 50% { transform: translateX(-6px); } }
+.sel-wheel { width: min(84px, 5.6vw); height: min(84px, 5.6vw); color: #8a96a8; transition: transform .08s linear, color .2s; }
+.sel-wheel.held { color: var(--ok); }
+.sel-msg { font-size: min(28px, 1.9vw); line-height: 1.45; text-align: left; }
+.sel-ring { width: min(84px, 5.6vw); height: min(84px, 5.6vw); transform: rotate(-90deg); }
+.sel-ring circle { fill: none; stroke-width: 9; }
+.sel-ring .bg { stroke: rgba(255,255,255,.15); }
+.sel-ring .fg { stroke: var(--ok); stroke-dasharray: 264; stroke-dashoffset: 264; stroke-linecap: round; }
+.sel-ring text { transform: rotate(90deg); transform-origin: 50px 50px; fill: #fff; font: 900 26px var(--num); opacity: .35; }
+#select.holding .sel-ring text { opacity: 1; }
+.sel-keys { font-size: min(18px, 1.2vw); color: var(--sub); opacity: .8; }
+
+/* ---------- その他 ---------- */
+#gear { position: fixed; z-index: 6; top: min(80px, 7vw); right: 20px; background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.4);
+  color: #fff; border-radius: 8px; font-size: 26px; padding: 2px 10px; cursor: pointer; opacity: .5; }
+#fsHint { position: fixed; z-index: 7; top: 70px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.7); color: #fff;
+  font-size: 26px; font-weight: bold; padding: 10px 24px; border-radius: 12px; display: none; pointer-events: none; }
+#status { position: fixed; z-index: 2; left: 50%; transform: translateX(-50%); bottom: 6px; font-size: 16px; color: var(--sub);
+  background: rgba(0,0,0,.4); padding: 2px 12px; border-radius: 8px; white-space: nowrap; }
+#status .ok { color: var(--ok); } #status .ng { color: var(--ng); }
+#settings { position: fixed; top: 0; right: 0; height: 100%; width: 500px; max-width: 100%; background: #0c1016; z-index: 10;
+  border-left: 1px solid #2c3547; padding: 18px; overflow-y: auto; display: none; font-size: 18px; }
+#settings.show { display: block; }
+#settings h2 { margin: 0 0 10px; font-size: 24px; }
+#settings label { display: block; margin: 13px 0 4px; color: var(--sub); }
+#settings input[type=number], #settings select { width: 100%; padding: 6px; background: #1b2230; color: #fff; border: 1px solid #2c3547; border-radius: 6px; font-size: 18px; }
+#settings input[type=range] { width: 100%; }
+#settings button { margin: 6px 6px 0 0; padding: 7px 12px; background: #1b2230; color: #fff; border: 1px solid #2c3547; border-radius: 6px; cursor: pointer; font-size: 17px; }
+#settings .note { color: #9aa4b5; font-size: 15px; margin-top: 4px; line-height: 1.5; }
+#settings .note.warn { color: var(--win); }
+#settings table.targets { width: 100%; border-collapse: collapse; font-size: 16px; }
+#settings table.targets td { padding: 3px 4px; }
+#settings table.targets td.ideal { color: #9aa4b5; font-size: 14px; white-space: nowrap; }
+#settings table.targets input { width: 90px; }
+#log { margin-top: 12px; background: #000; color: #9be38f; font: 12px Consolas, monospace; height: 150px; overflow-y: auto; padding: 6px; white-space: pre-wrap; border-radius: 6px; }
+#error { position: fixed; left: 0; right: 0; top: 0; background: #b3261e; color: #fff; padding: 14px 20px; font-size: 22px; display: none; z-index: 20; white-space: pre-wrap; }

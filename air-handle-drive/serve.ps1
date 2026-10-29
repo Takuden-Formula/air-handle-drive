@@ -10,7 +10,7 @@ function Log($m) { $line = "[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $m; Wri
 $mime = @{
   '.html' = 'text/html; charset=utf-8'; '.js' = 'text/javascript; charset=utf-8'; '.mjs' = 'text/javascript; charset=utf-8'
   '.wasm' = 'application/wasm'; '.task' = 'application/octet-stream'; '.css' = 'text/css'; '.json' = 'application/json'
-  '.png' = 'image/png'; '.ico' = 'image/x-icon'; '.md' = 'text/plain; charset=utf-8'
+  '.png' = 'image/png'; '.ico' = 'image/x-icon'; '.md' = 'text/plain; charset=utf-8'; '.glb' = 'model/gltf-binary'; '.svg' = 'image/svg+xml'
 }
 
 # find a free port
