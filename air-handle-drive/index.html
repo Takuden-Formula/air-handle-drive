@@ -18,6 +18,9 @@
   #hudSpeed { left: 20px; bottom: 16px; }
   #hudSpeed .v { font-size: min(120px, 9vw); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
   #hudSpeed .u { font-size: min(36px, 2.8vw); font-weight: bold; color: var(--sub); }
+  #hudSpeed .rpm { font-size: min(26px, 2vw); font-weight: bold; color: var(--sub); font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+  #hudSpeed .bar { width: min(260px, 20vw); height: 12px; border-radius: 6px; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.5); overflow: hidden; margin-bottom: 2px; }
+  #rpmBar { height: 100%; width: 0; background: linear-gradient(90deg, #4fc3f7 0%, #7ee787 50%, #ffcf3f 80%, #ff6b6b 100%); background-size: min(260px, 20vw) 100%; }
   #progWrap { position: fixed; z-index: 2; top: 18px; left: 50%; transform: translateX(-50%); width: min(34vw, 560px);
     height: 24px; background: rgba(0,0,0,.4); border-radius: 12px; border: 2px solid rgba(255,255,255,.6); }
   #prog { height: 100%; width: 0; background: linear-gradient(90deg, #4fc3f7, #ffcf3f); border-radius: 10px; }
@@ -72,7 +75,7 @@
 <div id="hudTime" class="hud"><div class="t" id="tTime">0.00</div><div class="g" id="tGoal"></div></div>
 <div id="progWrap"><div id="prog"></div></div>
 <div id="hudRight" class="hud"><div id="cones"></div></div>
-<div id="hudSpeed" class="hud"><span class="v" id="speed">0</span> <span class="u">km/h</span></div>
+<div id="hudSpeed" class="hud"><div class="rpm"><div class="bar"><div id="rpmBar"></div></div><span id="rpm">0</span> rpm</div><span class="v" id="speed">0</span> <span class="u">km/h</span></div>
 <div id="camWrap"><canvas id="cam"></canvas><div id="camLabel">-</div></div>
 
 <div id="center">
@@ -100,8 +103,8 @@
 
   <label>最高時速: <b id="maxKmhVal"></b></label>
   <input type="range" id="maxKmh" min="40" max="300" step="10">
-  <div class="note">40〜300 km/h。小さい子は 80〜120、ふつうは 160、上級者は 200 以上が目安。<br>
-    ふつうのコースで 120 km/h → 約50秒、160 km/h → 約37秒、200 km/h → 約30秒。</div>
+  <div class="note">40〜110 km/h。車はデンソー製モータ 36 kW・減速比 10:1・14 インチタイヤで、モータ 11000 rpm の 110 km/h が最高速。<br>
+    小さい子向けに遅くしたいときは下げる（スピードリミッターとして働く）。</div>
 
   <label>目標タイム [秒]（これより速くゴールすると景品）</label>
   <input type="number" id="target" min="5" max="300" step="1">
@@ -119,7 +122,7 @@
   <div class="note">大きくするとカーブで外に流されにくく、道路の外に出ても中央へ戻ります（小さい子向け）。</div>
 
   <label><input type="checkbox" id="cones"> コーン（障害物）を置く</label>
-  <label><input type="checkbox" id="sound"> 音（モーター音・効果音）</label>
+  <label><input type="checkbox" id="sound"> 音（走行音・効果音）</label>
   <label><input type="checkbox" id="mirror"> カメラ映像を左右反転（鏡のように）</label>
 
   <label>景品の残り数（0 で景品切れ表示。-1 = 数えない）</label>
@@ -145,7 +148,8 @@
 
 <script type="module">
 import { FilesetResolver, PoseLandmarker } from './lib/vision_bundle.mjs';
-import { Race, MAX_SPEED } from './game.js';
+import { Race, MAX_SPEED, KMH_AT_MAX, TOP_KMH, CAR, UNITS_PER_M, rpmToMs } from './game.js';
+import { DriveSound } from './sound.js';
 import { readWheel, angleToSteer } from './wheel.js';
 
 const START_HOLD_MS = 1500;   // ハンドルを握ってこの時間キープでスタート
@@ -165,11 +169,11 @@ function log(msg) { const el = $('log'); el.textContent += `[${new Date().toLoca
 
 // ---------- 設定・集計（ブラウザに保存） ----------
 const SKEY = 'air-handle-settings', STATKEY = 'air-handle-stats';
-const KMH_AT_MAX = 200;      // ゲーム内の速度 MAX_SPEED を何 km/h と表示するか
-const DEF = { course: 'normal', maxKmh: 160, target: 0, limit: 90, sens: 45, assist: 30, cones: true, sound: true, mirror: true, stock: -1, camId: '' };
+const TOP = Math.round(TOP_KMH / 10) * 10;   // 設定できる最高時速（モータの最高回転数で決まる。110 km/h。実際の頭打ちは 109.9 km/h）
+const DEF = { course: 'normal', maxKmh: TOP, target: 0, limit: 90, sens: 45, assist: 30, cones: true, sound: true, mirror: true, stock: -1, camId: '' };
 const settings = Object.assign({}, DEF, load(SKEY));
-if (settings.topSpeed && !load(SKEY).maxKmh) settings.maxKmh = Math.round(parseFloat(settings.topSpeed) * KMH_AT_MAX); // 旧版の設定を引き継ぐ
 delete settings.topSpeed;
+if (!(settings.maxKmh <= TOP)) settings.maxKmh = TOP;   // 旧版（最高 300 km/h）の設定は、モータの最高速に合わせる
 const topFactor = () => settings.maxKmh / KMH_AT_MAX;
 const stats = Object.assign({ plays: 0, finishes: 0, prizes: 0, ranking: [] }, load(STATKEY));
 function load(k) { try { return JSON.parse(localStorage.getItem(k)) || {}; } catch { return {}; } }
@@ -187,12 +191,13 @@ function rebuild() {
 function idealTime() { return race.idealTime(topFactor()); }
 
 function bindSettings() {
+  $('maxKmh').max = TOP;
   const ids = ['course', 'maxKmh', 'target', 'limit', 'sens', 'assist', 'stock'];
   ids.forEach((id) => { $(id).value = settings[id]; });
   ['cones', 'sound', 'mirror'].forEach((id) => { $(id).checked = settings[id]; });
   const upd = (ev) => {
     settings.course = $('course').value;
-    settings.maxKmh = Math.max(40, Math.min(300, parseInt($('maxKmh').value) || 160));
+    settings.maxKmh = Math.max(40, Math.min(TOP, parseInt($('maxKmh').value) || TOP));
     $('maxKmhVal').textContent = `${settings.maxKmh} km/h`;
     settings.limit = Math.max(20, parseInt($('limit').value) || 90);
     settings.sens = parseInt($('sens').value); settings.assist = parseInt($('assist').value);
@@ -228,19 +233,9 @@ function beep(freq, ms, type = 'square', vol = 0.15, delay = 0) {
   const t = actx.currentTime + delay / 1000;
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + ms / 1000); o.start(t); o.stop(t + ms / 1000 + 0.02);
 }
-function motorSound(pct) {
-  if (!audio()) return;
-  if (!motor) {
-    const o1 = actx.createOscillator(), o2 = actx.createOscillator(), g = actx.createGain(), f = actx.createBiquadFilter();
-    o1.type = 'sawtooth'; o2.type = 'sine'; f.type = 'lowpass'; f.frequency.value = 1800; g.gain.value = 0;
-    o1.connect(f); o2.connect(f); f.connect(g); g.connect(actx.destination); o1.start(); o2.start();
-    motor = { o1, o2, g };
-  }
-  const t = actx.currentTime;
-  motor.o1.frequency.setTargetAtTime(60 + 700 * pct, t, 0.05);    // インバータの「ヒュイーン」
-  motor.o2.frequency.setTargetAtTime(120 + 1400 * pct, t, 0.05);
-  motor.g.gain.setTargetAtTime(settings.sound && pct > 0.01 ? 0.025 + 0.03 * pct : 0, t, 0.1);
-}
+// 走行音（モータ回転数・トルク・車速から合成。sound.js）
+let drive = null;
+function driveSound() { if (!drive && audio()) { try { drive = new DriveSound(actx); } catch (e) { log('走行音を作れません: ' + e.message); } } return drive; }
 const fanfare = () => [523, 659, 784, 1047, 784, 1047].forEach((f, i) => beep(f, 260, 'square', 0.15, i * 140));
 const unlockAudio = () => { if (audio()) actx.resume(); };
 document.addEventListener('pointerdown', unlockAudio); document.addEventListener('keydown', unlockAudio);
@@ -366,7 +361,7 @@ function startGame(by) {
   serialSend('EV:START');
 }
 function finishRace(ok, reason) {
-  t0 = performance.now(); state = 'result'; motorSound(0);
+  t0 = performance.now(); state = 'result';
   if (ok) {
     stats.finishes++;
     const id = Date.now();
@@ -435,8 +430,8 @@ function update(now, dt) {
       race.update(dt, input.steer, input.throttle, opts);
       raceTime = el / 1000 + race.coneHits * CONE_PENALTY;
       for (const ev of race.events) {
-        if (ev === 'cone') { beep(140, 200, 'sawtooth', 0.25); setBig('+1秒', 'コーンにぶつかった！', 'var(--ng)'); t0hit = now; }
-        if (ev === 'crash') { beep(90, 400, 'sawtooth', 0.3); }
+        if (ev === 'cone') { if (settings.sound) driveSound()?.cone(); setBig('+1秒', 'コーンにぶつかった！', 'var(--ng)'); t0hit = now; }
+        if (ev === 'crash') { if (settings.sound) driveSound()?.crash(); setBig('ガシャン！', 'ガードレールにぶつかった', 'var(--ng)'); t0hit = now; }
       }
       race.events.length = 0;
       if (race.finished) finishRace(true);
@@ -450,7 +445,9 @@ function update(now, dt) {
       break;
     }
   }
-  motorSound(state === 'race' || state === 'result' ? race.speed / MAX_SPEED : 0);
+  const ds = (state === 'race' || state === 'result') && settings.sound ? driveSound() : drive;
+  if (ds) ds.update({ on: settings.sound && (state === 'race' || state === 'result'), rpm: race.rpm, torque: race.torque, maxTorque: CAR.torque,
+    speed: race.speed / UNITS_PER_M, topSpeed: rpmToMs(CAR.maxRpm), surface: race.surface, onKerb: race.onKerb });
 }
 
 function drawHud() {
@@ -458,6 +455,8 @@ function drawHud() {
   $('tTime').textContent = (racing ? raceTime : 0).toFixed(2);
   $('tTime').style.color = racing && raceTime > settings.target ? 'var(--ng)' : '#fff';
   $('speed').textContent = Math.round(race.speed / MAX_SPEED * KMH_AT_MAX);
+  $('rpm').textContent = Math.round(race.rpm / 10) * 10;
+  $('rpmBar').style.width = Math.min(100, race.rpm / CAR.maxRpm * 100) + '%';
   $('prog').style.width = (race.progress * 100) + '%';
   $('cones').textContent = racing ? `コーン ${race.coneHits} 本` + (race.offroad ? '　⚠ コースアウト' : '') : '';
   $('camLabel').textContent = wheel.held ? `ハンドル ${Math.round(wheel.angle)}°` : '両手を見せてね';

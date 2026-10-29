@@ -13,13 +13,41 @@ const FOG = 4;
 const CAM_DEPTH = 1 / Math.tan((FOV / 2) * Math.PI / 180);
 const PLAYER_Z = CAM_H * CAM_DEPTH;  // カメラから自車までの距離
 
-export const MAX_SPEED = SEG * 60;    // 1秒に60セグメント
-const ACCEL = MAX_SPEED / 4;
-const DECEL = -MAX_SPEED / 4;
+export const MAX_SPEED = SEG * 60;    // 1秒に60セグメント（速度のものさし。実際の最高速は下の CAR で決まる）
 const OFFROAD_DECEL = -MAX_SPEED / 1.5;
 const OFFROAD_LIMIT = MAX_SPEED / 4;
 const CENTRIFUGAL = 0.12;   // カーブで外側に流される強さ
 export const CAR_HALF = 0.15; // 自車の半幅（道路の半幅=1 とした単位）
+
+// ---------- 車の性能（同好会の車：デンソー製モータ 36 kW） ----------
+// 画面の縮尺：車幅 2*CAR_HALF*ROAD_W = 450 を 1.4 m とする（道路の幅は約 9.4 m になる）
+export const UNITS_PER_M = 2 * CAR_HALF * ROAD_W / 1.4;
+export const KMH_AT_MAX = MAX_SPEED / UNITS_PER_M * 3.6;   // MAX_SPEED が何 km/h か（約 135）
+export const CAR = {
+  power: 36000,      // モータの最大出力 [W]
+  torque: 60,        // モータの最大トルク [N·m]
+  maxRpm: 11000,     // モータの最高回転数 [rpm]
+  gear: 10,          // 減速比（モータ 10 回転でタイヤ 1 回転）
+  tireD: 0.53,       // タイヤ外径 [m]（14 インチホイール。仮定）
+  mass: 300,         // 運転手込みの車重 [kg]（仮定）
+  eff: 0.92,         // モータからタイヤまでの効率（仮定）
+  cda: 1.2,          // 空気抵抗係数×前面投影面積 [m²]（ウイング込み。仮定）
+  crr: 0.015,        // 転がり抵抗係数（仮定）
+  regen: 4,          // アクセルを離したときの回生ブレーキの減速度 [m/s²]（仮定）
+};
+// モータ回転数 [rpm] ⇔ 車速 [m/s]
+export const rpmToMs = (rpm) => rpm / CAR.gear / 60 * Math.PI * CAR.tireD;
+export const msToRpm = (v) => v / (Math.PI * CAR.tireD) * 60 * CAR.gear;
+export const TOP_KMH = rpmToMs(CAR.maxRpm) * 3.6;   // 最高速（約 110 km/h）
+// 車速 v [m/s] でアクセル全開のときの加速度 [m/s²] と、そのときのモータトルク [N·m]
+// 低速はトルク一定（60 N·m）、約 5700 rpm から上は出力一定（36 kW）でトルクが下がる
+export function motorAccel(v, throttle = 1) {
+  const w = msToRpm(v) * 2 * Math.PI / 60;                       // モータの角速度 [rad/s]
+  const tq = Math.min(CAR.torque, CAR.power / Math.max(w, 1)) * throttle;
+  const drive = tq * CAR.gear * CAR.eff / (CAR.tireD / 2);
+  const resist = 0.5 * 1.2 * CAR.cda * v * v + CAR.crr * CAR.mass * 9.81;
+  return { a: (drive - resist) / CAR.mass, torque: tq };
+}
 
 const BARRIER = 2.55;       // ガードレール・タイヤバリアの位置（道路の半幅=1）。自車はこの手前で止まる
 const BARRIER_H = 260;      // ガードレールの高さ（ワールド単位。車幅 ≒ 450）
@@ -213,20 +241,26 @@ export class Race {
   reset() {
     this.position = 0; this.speed = 0; this.playerX = 0; this.coneHits = 0; this.crashes = 0;
     this.finished = false; this.offroad = false; this.events = []; this.steer = 0; this.shake = 0;
-    this.surface = 'road'; this.particles = [];
+    this.surface = 'road'; this.particles = []; this.rpm = 0; this.torque = 0; this.onKerb = false;
     this.segments.forEach((s) => s.sprites.forEach((sp) => { sp.hit = false; }));
   }
 
   // 0〜1 のコース進捗
   get progress() { return clamp((this.position + PLAYER_Z) / this.finishZ, 0, 1); }
   // 理論上の最速タイム（だいたいの目安）
-  idealTime(topFactor) { const v = MAX_SPEED * topFactor; return this.finishZ / v + v / ACCEL / 2; }
+  // アクセル全開で道の真ん中を走ったときの時間を、車の性能から計算する
+  idealTime(topFactor) {
+    const top = Math.min(MAX_SPEED * topFactor, rpmToMs(CAR.maxRpm) * UNITS_PER_M), dt = 1 / 60;
+    let v = 0, z = PLAYER_Z, t = 0;
+    while (z < this.finishZ && t < 600) { v = Math.min(top, v + motorAccel(v / UNITS_PER_M).a * UNITS_PER_M * dt); z += v * dt; t += dt; }
+    return t;
+  }
 
   // ---------- 物理 ----------
   // steer: -1(左)〜1(右), throttle: 0〜1, opts: { topFactor, assist(0〜1) }
   update(dt, steer, throttle, opts) {
     if (!this.segments.length) return;
-    const top = MAX_SPEED * opts.topFactor;
+    const top = Math.min(MAX_SPEED * opts.topFactor, rpmToMs(CAR.maxRpm) * UNITS_PER_M);
     const seg = this.findSegment(this.position + PLAYER_Z);
     const pct = this.speed / MAX_SPEED;
     const dx = dt * 2 * pct;
@@ -238,9 +272,18 @@ export class Race {
     if (opts.assist > 0 && Math.abs(this.playerX) > 0.6) this.playerX -= Math.sign(this.playerX) * opts.assist * dt * 0.8; // 道路に戻すアシスト
     this.skyOffset += seg.curve * pct * dt * 0.02;
 
-    if (throttle > 0) this.speed += ACCEL * throttle * dt; else this.speed += DECEL * dt;
+    // モータの力で加速。アクセルを離すと回生ブレーキで減速。最高回転数か設定の最高時速で頭打ち
+    const vms = this.speed / UNITS_PER_M;
+    if (throttle > 0 && this.speed < top - 1) {
+      const m = motorAccel(vms, throttle); this.speed += m.a * UNITS_PER_M * dt; this.torque = m.torque;
+    } else if (throttle > 0) {
+      this.torque = Math.max(0, (0.5 * 1.2 * CAR.cda * vms * vms + CAR.crr * CAR.mass * 9.81) * (CAR.tireD / 2) / CAR.gear / CAR.eff);   // 一定速で走るぶんだけ
+    } else {
+      this.speed -= (CAR.regen + (0.5 * 1.2 * CAR.cda * vms * vms) / CAR.mass) * UNITS_PER_M * dt; this.torque = this.speed > 1 ? -CAR.torque * 0.5 : 0;
+    }
     this.offroad = Math.abs(this.playerX) > 1;
     this.surface = !this.offroad ? 'road' : (seg.gravel && Math.sign(this.playerX) === seg.gravel ? 'gravel' : 'grass');
+    this.onKerb = seg.kerb && Math.abs(this.playerX) > 1 - CAR_HALF && Math.abs(this.playerX) < 1.14 + CAR_HALF;
     if (this.offroad && this.speed > OFFROAD_LIMIT) this.speed += OFFROAD_DECEL * dt;
 
     // 当たり判定（自車がいるセグメントと次のセグメントのコーン）
@@ -263,6 +306,7 @@ export class Race {
       this.playerX = side * (BARRIER - CAR_HALF - 0.2);
     }
     this.speed = clamp(this.speed, 0, top);
+    this.rpm = msToRpm(this.speed / UNITS_PER_M);
     this.shake = Math.max(0, this.shake - dt);
     if (!this.finished && this.position + PLAYER_Z >= this.finishZ) { this.finished = true; this.events.push('finish'); }
   }
