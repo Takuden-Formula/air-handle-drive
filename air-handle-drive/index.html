@@ -496,7 +496,7 @@ function drawCam(res) {
 }
 
 // ---------- メインループ ----------
-let lastVideoTime = -1, fpsN = 0, fpsT = 0, lastFrame = performance.now();
+let lastVideoTime = -1, fpsN = 0, fpsT = 0, lastFrame = performance.now(), drawN = 0, slowSec = 0;
 function resize() { gcv.width = Math.min(window.innerWidth, 1920); gcv.height = Math.min(window.innerHeight, 1080); }
 window.addEventListener('resize', resize);
 
@@ -509,8 +509,16 @@ function loop() {
     try { res = landmarker.detectForVideo(video, now); } catch (e) { log('認識エラー: ' + e.message); }
     drawCam(res); fpsN++;
   }
-  if (now - fpsT > 1000) { $('stFps').textContent = `認識 ${fpsN} FPS`; fpsN = 0; fpsT = now; }
+  drawN++;
+  if (now - fpsT > 1000) {
+    $('stFps').textContent = `認識 ${fpsN} / 画面 ${drawN} FPS` + (race.quality ? '' : ' 軽量');
+    // 画面が 3 秒続けて 30 FPS を下回ったら、雲や遠くの林を省く軽量モードにする
+    slowSec = drawN < 30 ? slowSec + 1 : 0;
+    if (slowSec >= 3 && race.quality) { race.quality = 0; log('描画が重いので軽量モードに切り替えました'); }
+    fpsN = 0; drawN = 0; fpsT = now;
+  }
   update(now, dt);
+  race.showMap = state !== 'idle';   // 待機中はタイトルと重なるのでコースマップを出さない
   race.render(gctx, gcv.width, gcv.height);
   drawHud();
   requestAnimationFrame(loop);
