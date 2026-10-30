@@ -36,6 +36,13 @@
   #card { margin-top: 18px; background: var(--panel); border-radius: 16px; padding: 16px 32px; font-size: min(36px, 2.8vw); font-weight: bold; display: none; min-width: 420px; }
   #card table { margin: 6px auto 0; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   #card td { padding: 2px 18px; }
+  #card .choice { display: flex; gap: 18px; justify-content: center; margin-top: 10px; }
+  #card .choice button { pointer-events: auto; font: inherit; font-size: min(34px, 2.6vw); font-weight: 900; padding: 14px 26px; border-radius: 14px; cursor: pointer;
+    border: 3px solid rgba(255,255,255,.7); color: #fff; }
+  #card .choice .ok { background: #2e7d32; } #card .choice .again { background: #c62828; }
+  #card .choice small { display: block; font-size: .55em; font-weight: bold; opacity: .85; }
+  #card .sub { font-size: .7em; color: var(--sub); margin-top: 8px; }
+  #card .prizes td:first-child { color: var(--win); }
   #holdBar { width: min(600px, 50vw); height: 28px; border-radius: 14px; background: rgba(0,0,0,.4); margin-top: 14px; overflow: hidden; display: none;
     border: 2px solid rgba(255,255,255,.7); }
   #holdBar div { height: 100%; width: 0; background: var(--ok); }
@@ -87,7 +94,7 @@
 </div>
 <button id="gear" title="設定（Sキー）">⚙</button>
 <div id="fsHint">画面をクリックすると全画面になります（Esc で解除 ・ F で再び全画面）</div>
-<div id="status"><span id="stModel">モデル: 読み込み中…</span> ・ <span id="stFps">FPS -</span> ・ <span id="stSerial" class="ng">景品機: 未接続</span> ・ <span id="stStats"></span></div>
+<div id="status"><span id="stModel">モデル: 読み込み中…</span> ・ <span id="stFps">FPS -</span> ・ <span id="stSerial" class="ng">景品機: 未接続</span> ・ <span id="stRec"></span> ・ <span id="stStats"></span></div>
 
 <div id="settings">
   <h2>設定（S キーで開閉）</h2>
@@ -106,10 +113,21 @@
   <div class="note">40〜110 km/h。車はデンソー製モータ 36 kW・減速比 10:1・14 インチタイヤで、モータ 11000 rpm の 110 km/h が最高速。<br>
     小さい子向けに遅くしたいときは下げる（スピードリミッターとして働く）。</div>
 
-  <label>目標タイム [秒]（これより速くゴールすると景品）</label>
-  <input type="number" id="target" min="5" max="300" step="1">
-  <div class="note">このコース・速度の理論最速 ≒ <b id="ideal"></b> 秒。コーン1本ごとに +1秒、コースアウトすると大きく減速します。<br>
-    目安：理論最速 ＋10% で「上手な人だけ」、＋20% で「ふつうに運転できれば」、＋40% で「ほとんどの人」が景品。</div>
+  <label>料金 [円]（待機画面に出す）</label>
+  <input type="number" id="price" min="0" step="10">
+
+  <label>景品 4 個になるタイム [秒以内]</label>
+  <input type="number" id="t4" min="5" max="600" step="1">
+  <label>景品 3 個になるタイム [秒以内]（これより遅い・完走できないときは 2 個）</label>
+  <input type="number" id="t3" min="5" max="600" step="1">
+  <div class="note">このコース・速度の理論最速 ≒ <b id="ideal"></b> 秒。コーン1本ごとに +1秒。<br>
+    コースや速度を変えると、4 個 ＝ 理論最速 ＋15%、3 個 ＝ ＋35% に自動で設定します（あとから手で変えてよい）。</div>
+
+  <label>再挑戦したときの景品の数</label>
+  <select id="retryRule">
+    <option value="best">1回目と2回目の良い方</option>
+    <option value="last">2回目の結果（減ることもある）</option>
+  </select>
 
   <label>制限時間 [秒]（これを過ぎると終了）</label>
   <input type="number" id="limit" min="20" max="600" step="5">
@@ -134,12 +152,19 @@
   <button id="btnPing">PING</button>
   <div class="note">つながなくても遊べます（景品は手渡し）。</div>
 
+  <label>記録を保存するフォルダ</label>
+  <div class="note">フォルダ: <b id="recName">未設定</b> <span id="recState"></span></div>
+  <button id="btnRecPick">フォルダを選ぶ</button>
+  <button id="btnRecLoad">記録を読み込み直す</button>
+  <div class="note">選んだフォルダに records.csv を作り、1回走るごとに1行足します（Excel で開けます）。起動時にそこから本日のランキングと集計を読み込みます。<br>
+    ブラウザを開き直したあとは、最初に画面をクリックしたときに「フォルダの編集を許可」と聞かれるので「許可」を押してください。</div>
+
   <label>集計</label>
   <div id="statsDetail" class="note"></div>
   <button id="btnReset">集計とランキングをリセット</button>
 
   <div class="note" style="margin-top:14px">
-    キー操作: Space = スタート / S = 設定 / F = 全画面 / Esc = 全画面解除 / ← → = キーボードで運転（予備）/ A = 自動運転（デモ・テスト）/ Q = レース中止
+    キー操作: Enter = お金を受け取ったらスタート・結果で「受け取る」 / R = 結果で「もう1回」 / S = 設定 / F = 全画面 / Esc = 全画面解除 / ← → = キーボードで運転（予備）/ A = 自動運転（デモ・テスト）/ Q = レース中止
   </div>
   <div id="log"></div>
 </div>
@@ -150,10 +175,12 @@
 import { FilesetResolver, PoseLandmarker } from './lib/vision_bundle.mjs';
 import { Race, MAX_SPEED, KMH_AT_MAX, TOP_KMH, CAR, UNITS_PER_M, rpmToMs } from './game.js';
 import { DriveSound } from './sound.js';
+import { Records } from './records.js';
 import { readWheel, angleToSteer } from './wheel.js';
 
-const START_HOLD_MS = 1500;   // ハンドルを握ってこの時間キープでスタート
-const RESULT_MS = 7000;       // 結果表示の時間
+const RESULT_MS = 9000;       // 景品の個数を出したあと、待機画面に戻るまでの時間
+const CHOICE_MS = 30000;      // 「受け取る／もう1回」を選ばないとき、自動で受け取りにするまでの時間
+const CHOICE_HOLD_MS = 1500;  // ハンドルを左右に傾けて選ぶとき、傾けたままにする時間
 const AWAY_MS = 8000;         // レース中に人がいなくなったら中止するまでの時間
 const CONE_PENALTY = 1.0;     // コーン1本あたりのペナルティ[秒]
 
@@ -170,9 +197,9 @@ function log(msg) { const el = $('log'); el.textContent += `[${new Date().toLoca
 // ---------- 設定・集計（ブラウザに保存） ----------
 const SKEY = 'air-handle-settings', STATKEY = 'air-handle-stats';
 const TOP = Math.round(TOP_KMH / 10) * 10;   // 設定できる最高時速（モータの最高回転数で決まる。110 km/h。実際の頭打ちは 109.9 km/h）
-const DEF = { course: 'normal', maxKmh: TOP, target: 0, limit: 90, sens: 45, assist: 30, cones: true, sound: true, mirror: true, stock: -1, camId: '' };
+const DEF = { course: 'normal', maxKmh: TOP, price: 200, t4: 0, t3: 0, retryRule: 'best', limit: 90, sens: 45, assist: 30, cones: true, sound: true, mirror: true, stock: -1, camId: '' };
 const settings = Object.assign({}, DEF, load(SKEY));
-delete settings.topSpeed;
+delete settings.topSpeed; delete settings.target;
 if (!(settings.maxKmh <= TOP)) settings.maxKmh = TOP;   // 旧版（最高 300 km/h）の設定は、モータの最高速に合わせる
 const topFactor = () => settings.maxKmh / KMH_AT_MAX;
 const stats = Object.assign({ plays: 0, finishes: 0, prizes: 0, ranking: [] }, load(STATKEY));
@@ -192,7 +219,7 @@ function idealTime() { return race.idealTime(topFactor()); }
 
 function bindSettings() {
   $('maxKmh').max = TOP;
-  const ids = ['course', 'maxKmh', 'target', 'limit', 'sens', 'assist', 'stock'];
+  const ids = ['course', 'maxKmh', 'price', 't4', 't3', 'retryRule', 'limit', 'sens', 'assist', 'stock'];
   ids.forEach((id) => { $(id).value = settings[id]; });
   ['cones', 'sound', 'mirror'].forEach((id) => { $(id).checked = settings[id]; });
   const upd = (ev) => {
@@ -206,21 +233,64 @@ function bindSettings() {
     rebuild();
     const ideal = idealTime();
     $('ideal').textContent = ideal.toFixed(1);
-    // コースや速度を変えたとき、または未設定なら目標タイムを自動で「理論最速 ＋20%」にする
-    if (!settings.target || (ev && ['course', 'maxKmh', 'cones'].includes(ev.target.id))) {
-      settings.target = Math.ceil(ideal * 1.2); $('target').value = settings.target;
-    } else settings.target = Math.max(5, parseInt($('target').value) || settings.target);
+    // コースや速度を変えたとき、または未設定なら、景品の個数のタイムを自動で決める（4 個 ＝ 理論最速 ＋15%、3 個 ＝ ＋35%）
+    if (!settings.t4 || !settings.t3 || (ev && ['course', 'maxKmh', 'cones'].includes(ev.target.id))) {
+      settings.t4 = Math.ceil(ideal * 1.15); settings.t3 = Math.ceil(ideal * 1.35);
+      $('t4').value = settings.t4; $('t3').value = settings.t3;
+    } else {
+      settings.t4 = Math.max(5, parseInt($('t4').value) || settings.t4);
+      settings.t3 = Math.max(settings.t4, parseInt($('t3').value) || settings.t3);
+    }
+    settings.price = Math.max(0, parseInt($('price').value) || 0);
+    settings.retryRule = $('retryRule').value;
     $('sensVal').textContent = `${settings.sens}°`;
     $('assistVal').textContent = settings.assist === 0 ? 'なし' : `${settings.assist}%`;
     save(); drawStats();
   };
-  [...ids, 'cones', 'sound', 'mirror'].forEach((id) => $(id).addEventListener('input', upd));
+  [...ids, 'cones', 'sound', 'mirror'].forEach((id) => $(id).addEventListener(id === 'retryRule' ? 'change' : 'input', upd));
   upd();
 }
 function drawStats() {
   $('stStats').textContent = `挑戦 ${stats.plays} 人 / 景品 ${stats.prizes} 個` + (settings.stock >= 0 ? ` / 残り ${settings.stock}` : '');
   $('statsDetail').textContent = `挑戦 ${stats.plays} 人、完走 ${stats.finishes} 人、景品 ${stats.prizes} 個`;
-  $('tGoal').textContent = `目標 ${settings.target.toFixed ? settings.target.toFixed(0) : settings.target} 秒`;
+  $('tGoal').textContent = `4個 ${settings.t4} 秒 ／ 3個 ${settings.t3} 秒`;
+  const st = { none: '記録: 未設定', prompt: '記録: 許可待ち（画面をクリック）', ok: `記録: ${records.name}`, error: '記録: 読めません' }[records.state];
+  $('stRec').textContent = st; $('stRec').className = records.state === 'ok' ? 'ok' : records.state === 'none' ? '' : 'ng';
+  $('recName').textContent = records.name || '未設定';
+  $('recState').textContent = { none: '', prompt: '（許可待ち）', ok: `（${records.rows.length} 件）`, error: '（読めません: ' + (records.error || '') + '）' }[records.state];
+}
+
+// ---------- 記録フォルダ（records.csv） ----------
+const records = new Records();
+const today = () => new Date().toLocaleDateString('sv');   // YYYY-MM-DD
+// 記録フォルダから本日のランキングと集計を作り直す
+function applyRecords() {
+  if (records.state !== 'ok') return;
+  const rows = records.rows.filter((r) => (r['日時'] || '').startsWith(today()));
+  stats.ranking = rows.filter((r) => r['結果'] === 'ゴール').map((r, i) => ({ id: 'f' + i, time: parseFloat(r['タイム秒']), cones: parseInt(r['コーン']) || 0 }))
+    .filter((r) => !isNaN(r.time)).sort((a, b) => a.time - b.time).slice(0, 50);
+  stats.plays = new Set(rows.map((r) => r['受付番号'])).size;
+  stats.finishes = rows.filter((r) => r['結果'] === 'ゴール').length;
+  stats.prizes = rows.reduce((a, r) => a + (parseInt(r['渡した景品数']) || 0), 0);
+  const all = records.rows.filter((r) => r['結果'] === 'ゴール').map((r) => parseFloat(r['タイム秒'])).filter((t) => !isNaN(t));
+  stats.best = all.length ? Math.min(...all) : null;
+  save(); drawStats();
+  log(`記録を読み込みました: ${records.name}/records.csv（全 ${records.rows.length} 件、本日 ${rows.length} 件）`);
+}
+async function recordsGrant() { if (records.state === 'prompt' && await records.grant()) applyRecords(); drawStats(); }
+$('btnRecPick').onclick = async () => {
+  if (!records.supported) return showError('このブラウザはフォルダの保存に対応していません。Chrome か Edge で開いてください。');
+  try { await records.pick(); applyRecords(); } catch (e) { if (e.name !== 'AbortError') showError('フォルダを使えません: ' + e.message); }
+  drawStats();
+};
+$('btnRecLoad').onclick = async () => {
+  try { if (records.state === 'prompt') await records.grant(); else await records.load(); applyRecords(); } catch (e) { showError('記録を読めません: ' + e.message); }
+  drawStats();
+};
+async function saveRecord(rec) {
+  try { if (!(await records.append(rec)) && records.state !== 'none') log('記録フォルダに書けません（許可待ち）。ブラウザ内にだけ残します'); }
+  catch (e) { showError('記録を保存できません: ' + e.message); }
+  drawStats();
 }
 
 // ---------- 音（EV のモーター音＋効果音） ----------
@@ -263,7 +333,28 @@ async function readLoop(p) {
   }
   setSerialStatus(false); port = null; writer = null;
 }
-function onSerialLine(line) { if (!line.startsWith('STAT')) log('ESP32 > ' + line); if (line === 'BTN') startGame('button'); }
+function onSerialLine(line) {
+  if (!line.startsWith('STAT')) log('ESP32 > ' + line);
+  if (line === 'BTN') onEnter('button');
+  if (line.startsWith('DONE') || line === 'BUSY') { const w = onSerialLine.wait; onSerialLine.wait = null; if (w) w(line); }
+}
+// 景品を n 個出す。景品機は 1 回の PRIZE で 1 個出し、続けて出すには 1.5 秒あける必要があるので、1 個ずつ DONE を待って送る
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function dispense(n, onEach) {
+  let out = 0;
+  for (let i = 0; i < n && writer; i++) {
+    for (let tryN = 0; tryN < 3; tryN++) {
+      const got = new Promise((res) => { onSerialLine.wait = res; setTimeout(() => res('TIMEOUT'), 3000); });
+      if (!(await serialSend('PRIZE'))) return out;
+      const r = await got;
+      if (r.startsWith('DONE')) { out++; onEach?.(out); break; }
+      if (r !== 'BUSY') return out;   // 返事が無い：出たか分からないので送り直さない（多く出さないため。残りはスタッフが渡す）
+      await sleep(1600);              // BUSY（前の排出から 1.5 秒たっていない）なら待ってやり直す
+    }
+    await sleep(1600);
+  }
+  return out;
+}
 async function serialSend(cmd) {
   if (!writer) return false;
   try { await writer.write(new TextEncoder().encode(cmd + '\n')); log('ESP32 < ' + cmd); return true; } catch (e) { log('送信エラー: ' + e.message); return false; }
@@ -273,7 +364,7 @@ $('btnSerial').onclick = async () => {
   if (!('serial' in navigator)) return showError('このブラウザは Web Serial に対応していません。Chrome か Edge で開いてください。');
   try { await serialOpen(await navigator.serial.requestPort()); } catch { log('ポート選択キャンセル'); }
 };
-$('btnTest').onclick = () => serialSend('PRIZE');
+$('btnTest').onclick = () => dispense(1);
 $('btnPing').onclick = () => serialSend('PING');
 $('btnReset').onclick = () => { if (confirm('集計とランキングをリセットしますか？')) { Object.assign(stats, { plays: 0, finishes: 0, prizes: 0, ranking: [] }); save(); drawStats(); } };
 async function autoConnect() {
@@ -330,30 +421,46 @@ function readInput(now) {
 }
 
 // ---------- ゲーム進行 ----------
+// idle（200円を表示して待つ）→ Enter → lights → race → choice（景品の個数を見せて「受け取る／もう1回」）→ payout（景品を出す）→ idle
+// もう1回は 1 回だけ。2回目が終わったら choice を飛ばして payout
 let t0hit = -1e9;
-let state = 'loading', t0 = 0, holdStart = 0, raceTime = 0, lightsOutAt = 0, result = null, lastEvent = '';
+let state = 'loading', t0 = 0, holdStart = 0, holdDir = 0, raceTime = 0, lightsOutAt = 0;
+let session = null;   // 1 回の受付（200円）: { no, attempt, results: [{ time, ok, reason, cones, prizes }] }
 
 function setBig(big, small = '', color = '') {
   const b = $('big');
   if (b.textContent !== big) { b.textContent = big; b.classList.remove('pop'); void b.offsetWidth; if (big) b.classList.add('pop'); }
   b.style.color = color; $('small').textContent = small;
 }
-function showCard(html) { const c = $('card'); c.innerHTML = html || ''; c.style.display = html ? 'block' : 'none'; }
+function showCard(html) { const c = $('card'); if (c._html !== html) { c.innerHTML = html || ''; c._html = html; } c.style.display = html ? 'block' : 'none'; }
 function rankingHtml(highlight) {
   const rows = stats.ranking.slice(0, 5).map((r, i) =>
     `<tr style="${r.id === highlight ? 'color:var(--win);font-weight:bold' : ''}"><td>${i + 1}位</td><td>${r.time.toFixed(2)} 秒</td><td>${r.cones ? 'コーン' + r.cones : ''}</td></tr>`).join('');
-  return rows ? `<div>🏆 本日のランキング</div><table>${rows}</table>` : '';
+  return rows ? `<div>🏆 本日のランキング</div><table>${rows}</table>` + (stats.best ? `<div class="sub">これまでの最速 ${stats.best.toFixed(2)} 秒</div>` : '') : '';
 }
+function prizeTableHtml() {
+  return `<div>🎁 景品はタイムで決まる</div><table class="prizes">
+    <tr><td>4 個</td><td>${settings.t4} 秒以内</td></tr><tr><td>3 個</td><td>${settings.t3} 秒以内</td></tr><tr><td>2 個</td><td>それより遅くても OK</td></tr></table>`;
+}
+// タイム → 景品の個数（最低 2 個、最大 4 個。完走できなくても 2 個）
+function prizesFor(r) { return !r.ok ? 2 : r.time <= settings.t4 ? 4 : r.time <= settings.t3 ? 3 : 2; }
 function setLights(n) { [...document.querySelectorAll('#lights .l')].forEach((l, i) => l.classList.toggle('on', i < n)); }
 
 function toIdle() {
-  state = 'idle'; holdStart = 0; race.reset(); autopilot = false;
+  state = 'idle'; holdStart = 0; race.reset(); autopilot = false; session = null;
   $('lights').style.display = 'none';
 }
-function startGame(by) {
-  if (state !== 'idle') return;
-  if (settings.stock === 0) { setBig('景品切れ', 'スタッフを呼んでね'); return; }
-  stats.plays++; save(); drawStats(); log(`スタート (${by})`);
+// Enter（またはスタッフの景品機ボタン）：待機中ならお金を受け取ったのでスタート。結果画面なら「受け取る」
+function onEnter(by) {
+  if (state === 'idle') {
+    if (settings.stock === 0) { setBig('景品切れ', 'スタッフを呼んでね'); return; }
+    session = { no: Date.now().toString(36).toUpperCase(), attempt: 0, results: [] };
+    stats.plays++; save(); drawStats(); log(`受付 ${session.no}（${settings.price}円, ${by}）`);
+    startRace();
+  } else if (state === 'choice') decide('accept');
+}
+function startRace() {
+  session.attempt++;
   race.reset(); steerSmooth = 0; autopilot = false;
   state = 'lights'; t0 = performance.now();
   lightsOutAt = 5 * 600 + 400 + Math.random() * 800;    // F1 と同じく、消えるタイミングは毎回少しちがう
@@ -361,29 +468,61 @@ function startGame(by) {
   serialSend('EV:START');
 }
 function finishRace(ok, reason) {
-  t0 = performance.now(); state = 'result';
+  t0 = performance.now();
+  const r = { time: raceTime, ok, reason, cones: race.coneHits, attempt: session.attempt, at: new Date() };
+  r.prizes = prizesFor(r);
+  session.results.push(r);
+  let rankId = null;
   if (ok) {
-    stats.finishes++;
-    const id = Date.now();
-    stats.ranking.push({ id, time: raceTime, cones: race.coneHits });
+    stats.finishes++; rankId = Date.now();
+    stats.ranking.push({ id: rankId, time: raceTime, cones: race.coneHits });
     stats.ranking.sort((a, b) => a.time - b.time); stats.ranking = stats.ranking.slice(0, 50);
-    const rank = stats.ranking.findIndex((r) => r.id === id) + 1;
-    const prize = raceTime <= settings.target && settings.stock !== 0;
-    if (prize) {
-      stats.prizes++; if (settings.stock > 0) { settings.stock--; $('stock').value = settings.stock; }
-      setBig('🎉 景品ゲット！', `タイム ${raceTime.toFixed(2)} 秒\n（目標 ${settings.target} 秒）`, 'var(--win)');
-      fanfare(); serialSend('PRIZE');
-    } else {
-      setBig('ゴール！', `タイム ${raceTime.toFixed(2)} 秒\n目標まで あと ${(raceTime - settings.target).toFixed(2)} 秒！`, '#fff');
-      beep(660, 300, 'triangle'); serialSend('EV:LOSE');
-    }
-    showCard(`<div>本日 ${rank} 位 ・ コーン ${race.coneHits} 本</div>` + rankingHtml(id));
-  } else {
-    setBig(reason === 'away' ? '中止' : '時間切れ', reason === 'away' ? 'ハンドルから手がはなれました' : 'また挑戦してね！', 'var(--ng)');
-    beep(330, 500, 'triangle'); serialSend('EV:LOSE'); showCard('');
+    if (stats.best == null || raceTime < stats.best) stats.best = raceTime;
   }
-  log(`結果: ${ok ? raceTime.toFixed(2) + '秒' : reason} コーン${race.coneHits} 木${race.crashes}`);
+  r.rankId = rankId;
+  log(`${session.attempt}回目: ${ok ? raceTime.toFixed(2) + '秒' : reason} コーン${race.coneHits} → 景品${r.prizes}個`);
   save(); drawStats();
+  if (session.attempt === 1) { state = 'choice'; holdStart = 0; beep(660, 300, 'triangle'); }
+  else payout();
+}
+// 「受け取る」か「もう1回」を決める
+function decide(how) {
+  if (state !== 'choice') return;
+  const r = session.results[session.results.length - 1];
+  if (how === 'again') {
+    saveRecord(recordRow(r, '再挑戦', ''));
+    log('もう1回（再挑戦）'); startRace();
+  } else payout();
+}
+function finalPrizes() {
+  const rs = session.results;
+  return settings.retryRule === 'last' || rs.length === 1 ? rs[rs.length - 1].prizes : Math.max(...rs.map((r) => r.prizes));
+}
+function recordRow(r, verdict, given) {
+  const d = r.at, pad = (n) => String(n).padStart(2, '0');
+  return { '日時': `${d.toLocaleDateString('sv')} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`, '受付番号': session.no, '回目': r.attempt,
+    '結果': r.ok ? 'ゴール' : r.reason === 'away' ? '中止' : '時間切れ', 'タイム秒': r.ok ? r.time.toFixed(2) : '', 'コーン': r.cones,
+    'この回の景品数': r.prizes, '判定': verdict, '渡した景品数': given, 'コース': { short: 'みじかい', normal: 'ふつう', long: 'ながい' }[settings.course], '最高時速': settings.maxKmh };
+}
+async function payout() {
+  state = 'payout'; t0 = performance.now();
+  const rs = session.results, last = rs[rs.length - 1];
+  let n = finalPrizes();
+  if (settings.stock >= 0) n = Math.min(n, settings.stock);
+  saveRecord(recordRow(last, rs.length === 1 ? '受け取り' : '2回目で確定', n));
+  stats.prizes += n; if (settings.stock > 0) { settings.stock -= n; $('stock').value = settings.stock; }
+  save(); drawStats();
+  const why = rs.length === 2 ? `\n1回目 ${rs[0].prizes} 個 ・ 2回目 ${rs[1].prizes} 個` : '';
+  setBig(`🎉 景品 ${n} 個！`, (last.ok ? `タイム ${last.time.toFixed(2)} 秒` : '') + why, 'var(--win)');
+  payout.msg = writer ? '景品が出てくるよ…' : 'スタッフから受け取ってね';
+  fanfare(); log(`景品 ${n} 個（受付 ${session.no}）`);
+  if (writer && n > 0) {
+    payout.busy = true;
+    const out = await dispense(n, (k) => { payout.msg = `景品が出てくるよ… ${k} / ${n}`; });
+    payout.busy = false; t0 = performance.now();
+    payout.msg = out === n ? '受け取ってね！' : `景品機から ${out} 個しか出ませんでした。残りはスタッフから受け取ってね`;
+    if (out !== n) log(`景品機の排出が ${out} / ${n} 個`);
+  }
 }
 
 function update(now, dt) {
@@ -395,29 +534,20 @@ function update(now, dt) {
 
   switch (state) {
     case 'idle': {
-      // 待機中は自動運転のデモ走行
+      // 待機中は自動運転のデモ走行。お金を受け取ったらスタッフが Enter
       race.update(dt, race.autopilot(), 1, { topFactor: 0.7, assist: 0.5 });
       if (race.finished) race.reset();
       race.events.length = 0;
-      if (wheel.ready || keys.left || keys.right) {
-        if (!holdStart) holdStart = now;
-        const p = Math.min(1, (now - holdStart) / START_HOLD_MS);
-        $('holdBar').style.display = 'block'; $('holdBar').firstElementChild.style.width = (p * 100) + '%';
-        setBig('エアハンドル\nドライブ', 'そのまま にぎっていてね…');
-        if (p >= 1) startGame('wheel');
-      } else {
-        holdStart = 0;
-        setBig('エアハンドル\nドライブ', settings.stock === 0 ? '景品切れ（スタッフを呼んでね）'
-          : `🙌 ハンドルをにぎってスタート！\n${settings.target} 秒以内にゴールで景品 🎁`);
-      }
-      showCard(rankingHtml());
+      setBig('エアハンドル\nドライブ', settings.stock === 0 ? '景品切れ（スタッフを呼んでね）'
+        : `1回 ${settings.price} 円\n景品 2〜4 個 🎁`);
+      showCard(prizeTableHtml() + `<div class="sub">お金を入れたら Enter でスタート</div>` + (stats.ranking.length ? '<br>' + rankingHtml() : ''));
       break;
     }
     case 'lights': {
       const n = Math.min(5, Math.floor(el / 600));
       if (el < lightsOutAt) {
         if (n !== setLights.last) { setLights(n); setLights.last = n; if (n > 0) beep(440, 150); }
-        setBig('', n < 5 ? 'ハンドルをにぎって準備…' : 'ライトが消えたらスタート！');
+        setBig('', (session.attempt === 2 ? '🔁 再挑戦！\n' : '') + (n < 5 ? 'ハンドルをにぎって準備…' : 'ライトが消えたらスタート！'));
       } else {
         setLights(0); setLights.last = -1; $('lights').style.display = 'none';
         setBig('GO!', '', 'var(--ok)'); beep(880, 400);
@@ -439,21 +569,47 @@ function update(now, dt) {
       else if (now - lastHeldAt > AWAY_MS) finishRace(false, 'away');
       break;
     }
-    case 'result': {
+    case 'choice': {
+      // 1回目の結果：景品の個数を見せて、受け取るか、もう1回（1回だけ）かを選ぶ
       race.update(dt, 0, 0, opts); race.events.length = 0;
-      if (el > RESULT_MS) { showCard(''); toIdle(); }
+      const r = session.results[0];
+      const head = r.ok ? `タイム ${r.time.toFixed(2)} 秒` + (r.cones ? `（コーン ${r.cones} 本 ＋${r.cones}秒）` : '')
+        : (r.reason === 'away' ? 'ハンドルから手がはなれました' : '時間切れ');
+      setBig(`景品 ${r.prizes} 個！`, head, 'var(--win)');
+      const rule = settings.retryRule === 'last' ? '2回目の結果で決まります（減ることもあります）' : '1回目と2回目の良い方になります（減りません）';
+      const left = Math.max(0, Math.ceil((CHOICE_MS - el) / 1000));
+      showCard(`<div class="choice"><button class="ok" data-c="accept">✋→ 受け取る<small>Enter ／ ハンドルを右にかたむける</small></button>
+        <button class="again" data-c="again">←✋ もう1回！<small>R ／ ハンドルを左にかたむける</small></button></div>
+        <div class="sub">もう1回は 1 回だけ。${rule}<br>あと ${left} 秒で自動で「受け取る」になります</div>`
+        + (r.ok && r.prizes < 4 ? `<div class="sub">あと ${(r.time - (r.prizes === 3 ? settings.t4 : settings.t3)).toFixed(2)} 秒速ければ ${r.prizes + 1} 個！</div>` : ''));
+      // ハンドルを左右に傾けたまま 1.5 秒で決定
+      const dir = wheel.held && Math.abs(wheel.angle) > 25 ? Math.sign(wheel.angle) : 0;
+      if (dir && dir === holdDir) {
+        const p = Math.min(1, (now - holdStart) / CHOICE_HOLD_MS);
+        $('holdBar').style.display = 'block'; $('holdBar').firstElementChild.style.width = (p * 100) + '%';
+        $('holdBar').firstElementChild.style.background = dir > 0 ? 'var(--ok)' : 'var(--ng)';
+        if (p >= 1) decide(dir > 0 ? 'accept' : 'again');
+      } else { holdDir = dir; holdStart = now; }
+      if (state === 'choice' && el > CHOICE_MS) decide('accept');
+      break;
+    }
+    case 'payout': {
+      race.update(dt, 0, 0, opts); race.events.length = 0;
+      showCard(`<div>${payout.msg}</div>` + (stats.ranking.length ? '<br>' + rankingHtml(session.results.at(-1).rankId) : ''));
+      if (!payout.busy && el > RESULT_MS) { showCard(''); toIdle(); }
       break;
     }
   }
-  const ds = (state === 'race' || state === 'result') && settings.sound ? driveSound() : drive;
-  if (ds) ds.update({ on: settings.sound && (state === 'race' || state === 'result'), rpm: race.rpm, torque: race.torque, maxTorque: CAR.torque,
+  const sounding = state === 'race' || state === 'choice' || state === 'payout';
+  const ds = sounding && settings.sound ? driveSound() : drive;
+  if (ds) ds.update({ on: settings.sound && sounding, rpm: race.rpm, torque: race.torque, maxTorque: CAR.torque,
     speed: race.speed / UNITS_PER_M, topSpeed: rpmToMs(CAR.maxRpm), surface: race.surface, onKerb: race.onKerb });
 }
 
 function drawHud() {
-  const racing = state === 'race' || state === 'result';
+  const racing = state === 'race' || state === 'choice' || state === 'payout';
   $('tTime').textContent = (racing ? raceTime : 0).toFixed(2);
-  $('tTime').style.color = racing && raceTime > settings.target ? 'var(--ng)' : '#fff';
+  $('tTime').style.color = !racing ? '#fff' : raceTime <= settings.t4 ? 'var(--win)' : raceTime <= settings.t3 ? '#fff' : 'var(--ng)';
   $('speed').textContent = Math.round(race.speed / MAX_SPEED * KMH_AT_MAX);
   $('rpm').textContent = Math.round(race.rpm / 10) * 10;
   $('rpmBar').style.width = Math.min(100, race.rpm / CAR.maxRpm * 100) + '%';
@@ -517,7 +673,7 @@ function loop() {
     fpsN = 0; drawN = 0; fpsT = now;
   }
   update(now, dt);
-  race.showMap = state !== 'idle';   // 待機中はタイトルと重なるのでコースマップを出さない
+  race.showMap = state === 'lights' || state === 'race';   // 待機中・結果は大きな文字と重なるのでコースマップを出さない
   race.render(gctx, gcv.width, gcv.height);
   drawHud();
   requestAnimationFrame(loop);
@@ -526,12 +682,14 @@ function loop() {
 // ---------- キー操作 ----------
 document.addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-  if (e.code === 'Space') { e.preventDefault(); startGame('key'); }
+  if (e.key === 'Enter') { e.preventDefault(); onEnter('key'); }
+  else if ((e.key === 'r' || e.key === 'R') && state === 'choice') decide('again');
   else if (e.key === 's' || e.key === 'S') $('settings').classList.toggle('show');
   else if (e.key === 'f' || e.key === 'F') { document.fullscreenElement ? document.exitFullscreen() : enterFullscreen(); }
   else if (e.key === 'a' || e.key === 'A') { autopilot = !autopilot; log('自動運転 ' + (autopilot ? 'ON' : 'OFF')); }
   else if (e.key === 'Escape') { if (document.fullscreenElement) document.exitFullscreen(); }   // Esc = 全画面解除
   else if ((e.key === 'q' || e.key === 'Q') && (state === 'race' || state === 'lights')) { $('lights').style.display = 'none'; finishRace(false, 'away'); }
+  else if ((e.key === 'q' || e.key === 'Q') && state === 'choice') decide('accept');
   else if (e.key === 'ArrowLeft') { keys.left = true; lastKeyAt = performance.now(); }
   else if (e.key === 'ArrowRight') { keys.right = true; lastKeyAt = performance.now(); }
 });
@@ -540,6 +698,9 @@ document.addEventListener('keyup', (e) => {
   if (e.key === 'ArrowRight') { keys.right = false; lastKeyAt = performance.now(); }
 });
 $('gear').onclick = () => $('settings').classList.toggle('show');
+$('card').addEventListener('click', (e) => { const b = e.target.closest('button[data-c]'); if (b) decide(b.dataset.c); });
+// ブラウザを開き直したあと、最初の操作で記録フォルダへの書き込みを許可してもらう
+document.addEventListener('pointerdown', recordsGrant); document.addEventListener('keydown', recordsGrant);
 
 // ---------- 全画面 ----------
 // 起動_全画面.bat で開いたとき（?fs=1）は、最初のクリック/キーで全画面にする（ブラウザの決まりで操作が必要）。
@@ -560,7 +721,9 @@ updateFsHint();
 // ---------- 起動 ----------
 (async () => {
   if (location.protocol === 'file:') { showError('index.html を直接開いても動きません。フォルダ内の「起動.bat」をダブルクリックしてください。'); return; }
-  resize(); bindSettings(); drawStats();
+  resize(); bindSettings();
+  try { await records.restore(); applyRecords(); } catch (e) { log('記録フォルダを読めません: ' + e.message); }
+  drawStats();
   setBig('準備中…', 'カメラとAIを起動しています');
   race.render(gctx, gcv.width, gcv.height);
   try { await Promise.all([startCamera(), loadModel()]); }
@@ -571,7 +734,7 @@ updateFsHint();
 })();
 
 // テスト用
-window.__dbg = { race, settings, get state() { return state; }, get raceTime() { return raceTime; }, setAuto: (v) => { autopilot = v; } };
+window.__dbg = { race, settings, stats, records, get state() { return state; }, get raceTime() { return raceTime; }, get session() { return session; }, setAuto: (v) => { autopilot = v; } };
 </script>
 </body>
 </html>
