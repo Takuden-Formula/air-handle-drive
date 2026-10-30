@@ -78,8 +78,12 @@ export class Records {
     return this.rows;
   }
 
-  // 1行足す（ファイルの最後に書き足す）
-  async append(rec) {
+  // 1行足す（ファイルの最後に書き足す）。続けて呼ばれても1行ずつ順に書く（同時に書くと後の行が前の行を上書きするため）
+  append(rec) {
+    this.queue = (this.queue || Promise.resolve()).catch(() => {}).then(() => this.appendNow(rec));
+    return this.queue;
+  }
+  async appendNow(rec) {
     if (this.state !== 'ok') return false;
     const fh = await this.dir.getFileHandle(FILE, { create: true });
     const file = await fh.getFile();
