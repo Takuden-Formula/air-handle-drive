@@ -68,7 +68,7 @@ const THEMES = {
 };
 
 const C = {
-  sky1: [46, 120, 204], sky2: [150, 196, 232], fog: [205, 222, 232],
+  sky1: [30, 96, 190], sky2: [146, 194, 232], fog: [205, 222, 232],
   road: [92, 94, 98], roadLine: [238, 238, 232], kerbR: [214, 40, 40], kerbW: [242, 242, 242],
   grass1: [86, 156, 72], grass2: [76, 144, 64], gravel1: [214, 196, 158], gravel2: [204, 186, 148],
   armco: [182, 188, 196], armcoDark: [104, 110, 120], tire: [34, 34, 36],
@@ -94,6 +94,9 @@ function fogc(c, f, k = 1) {
   }
   return s;
 }
+
+// 整数から 0〜1 の疑似乱数（コースの見た目のむら用。毎回同じ値になる）
+function hash(n) { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
 
 function mulberry32(a) {
   return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a);
@@ -551,7 +554,64 @@ export class Race {
     }
     this.drawCar(ctx, W, H, now);
     ctx.restore();
+    this.postFx(ctx, W, H);
     if (this.showMap) this.drawMap(ctx, W, H);
+  }
+
+  // 仕上げの画像処理：ブルーム（明るい所のにじみ）・色調補正・レンズフレア・スピード感の筋・ビネット・フィルムグレイン
+  postFx(ctx, W, H) {
+    const pct = clamp(this.speed / MAX_SPEED, 0, 1);
+    ctx.save();
+    if (this.quality) {
+      const bw = Math.max(96, (W / 5) | 0), bh = Math.max(54, (H / 5) | 0);
+      let b = this._bloom;
+      if (!b || b.width !== bw || b.height !== bh) { b = this._bloom = document.createElement('canvas'); b.width = bw; b.height = bh; b.g = b.getContext('2d'); }
+      b.g.clearRect(0, 0, bw, bh); b.g.filter = 'blur(2.5px) contrast(2.3) brightness(0.85)'; b.g.drawImage(ctx.canvas, 0, 0, bw, bh); b.g.filter = 'none';
+      ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.5; ctx.imageSmoothingEnabled = true; ctx.drawImage(b, 0, 0, W, H);
+      // 色調補正（上は暖かく、下は少し青く。ソフトライトで重ねる）
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'soft-light';
+      const cg = ctx.createLinearGradient(0, 0, 0, H);
+      cg.addColorStop(0, 'rgba(255,205,150,.30)'); cg.addColorStop(0.55, 'rgba(255,255,255,0)'); cg.addColorStop(1, 'rgba(70,100,150,.32)');
+      ctx.fillStyle = cg; ctx.fillRect(0, 0, W, H);
+      // レンズフレア（太陽が画面内のとき）
+      const sun = this._sun;
+      if (sun && sun.x > -W * 0.1 && sun.x < W * 1.1 && this.theme.bg !== 'city') {
+        ctx.globalCompositeOperation = 'screen';
+        const mx = W / 2, my = H / 2, dx = mx - sun.x, dy = my - sun.y, fade = clamp(1 - Math.abs(sun.x - mx) / (W * 0.75), 0, 1);
+        const ghosts = [[0.35, 0.05, '255,220,160'], [0.7, 0.09, '160,210,255'], [1.0, 0.04, '255,180,120'], [1.5, 0.13, '200,255,200'], [1.9, 0.06, '255,200,255']];
+        for (const [t, r, col] of ghosts) {
+          const gx = sun.x + dx * t, gy = sun.y + dy * t, gr = ctx.createRadialGradient(gx, gy, 0, gx, gy, H * r);
+          gr.addColorStop(0, `rgba(${col},${0.22 * fade})`); gr.addColorStop(0.7, `rgba(${col},${0.08 * fade})`); gr.addColorStop(1, `rgba(${col},0)`);
+          ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(gx, gy, H * r, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      // スピード感：画面の端から中心へ向かう細い筋
+      if (pct > 0.45) {
+        ctx.globalCompositeOperation = 'screen'; ctx.lineCap = 'round';
+        const cx = W * this.cx, cy = H * 0.5, n = Math.round((pct - 0.4) * 36), M = Math.max(W, H);
+        for (let i = 0; i < n; i++) {
+          const a = Math.random() * Math.PI * 2, r0 = M * (0.42 + Math.random() * 0.2), r1 = r0 + M * (0.06 + Math.random() * 0.12) * pct;
+          ctx.strokeStyle = `rgba(255,255,255,${0.04 + Math.random() * 0.07})`; ctx.lineWidth = 1 + Math.random() * 2.2;
+          ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0 * 0.7); ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1 * 0.7); ctx.stroke();
+        }
+      }
+    }
+    // ビネット（周辺を暗く）
+    ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 1;
+    if (!this._vig || this._vig.W !== W || this._vig.H !== H) {
+      const vg = ctx.createRadialGradient(W / 2, H * 0.52, Math.min(W, H) * 0.35, W / 2, H * 0.52, Math.hypot(W, H) * 0.56);
+      vg.addColorStop(0, 'rgba(255,255,255,1)'); vg.addColorStop(1, 'rgba(70,72,80,1)');
+      this._vig = { W, H, g: vg };
+    }
+    ctx.fillStyle = this._vig.g; ctx.fillRect(0, 0, W, H);
+    // フィルムグレイン
+    if (this.quality) {
+      if (!SPR.grain) SPR.grain = canvas(192, 192, (g, w, h) => { const d = g.createImageData(w, h); for (let i = 0; i < d.data.length; i += 4) { const v = 128 + (Math.random() - 0.5) * 255 | 0; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } g.putImageData(d, 0, 0); });
+      if (!this._grainPat) this._grainPat = ctx.createPattern(SPR.grain, 'repeat');
+      ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.07;
+      ctx.translate((Math.random() * 192) | 0, (Math.random() * 192) | 0); ctx.fillStyle = this._grainPat; ctx.fillRect(-192, -192, W + 192, H + 192);
+    }
+    ctx.restore();
   }
 
   project(p, camX, camY, camZ, W, H) {
@@ -573,6 +633,18 @@ export class Race {
     // 太陽
     const sx = ((0.78 - this.skyOffset * 0.25) % 1 + 1) % 1 * W * 1.3 - W * 0.15, sy = hy * 0.28;
     ctx.drawImage(SPR.sun, sx - H * 0.22, sy - H * 0.22, H * 0.44, H * 0.44);
+    this._sun = { x: sx, y: sy };
+    if (this.quality) {   // 太陽から広がる光の筋（薄く）
+      ctx.save(); ctx.globalCompositeOperation = 'screen';
+      for (let i = 0; i < 9; i++) {
+        const a = Math.PI * (0.12 + i * 0.095) + Math.sin(now / 5000 + i) * 0.02, L = H * 1.4, wd = 0.028 + (i % 3) * 0.012;
+        const gr = ctx.createLinearGradient(sx, sy, sx + Math.cos(a) * L, sy + Math.sin(a) * L);
+        gr.addColorStop(0, 'rgba(255,236,190,.16)'); gr.addColorStop(1, 'rgba(255,236,190,0)');
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + Math.cos(a - wd) * L, sy + Math.sin(a - wd) * L); ctx.lineTo(sx + Math.cos(a + wd) * L, sy + Math.sin(a + wd) * L); ctx.fill();
+      }
+      ctx.restore();
+    }
     // 雲（ゆっくり流れ、カーブで横に動く）
     const drift = now / 1000 * 0.004;
     for (let i = 0; i < (this.quality ? 7 : 0); i++) {
@@ -655,6 +727,7 @@ export class Race {
     const [l1, l2] = at(-1), [r1, r2] = at(1);
     Q(T.road, 1 + s.shade, l1, r1, l2, r2);
     if (w2 < 6) return;   // 遠くて細いときは細かい線を省く
+    if (this.quality && w2 > 9) this.drawSurface(ctx, s, at, Q, b.y, y1, w1, w2, x1, x2, f);
     // 白線（両端）
     for (const side of [-1, 1]) { const [p1, p2] = at(side * 0.965), [q1, q2] = at(side * 0.995); Q(C.roadLine, 1, p1, q1, p2, q2); }
     if (s.index === this.finishSeg || s.index === this.finishSeg + 1 || s.index === 9) {     // ゴールのチェッカーとスタートライン
@@ -669,6 +742,35 @@ export class Race {
     } else if (s.light && (this.type === 'highway' || s.index % 2 === 0)) {   // 車線の破線（高速は長い破線）
       const lw = 0.025;
       for (let i = 1; i < LANES; i++) { const o = -1 + (2 * i) / LANES, [p1, p2] = at(o - lw), [q1, q2] = at(o + lw); Q(C.roadLine, 0.95, p1, q1, p2, q2); }
+    }
+  }
+
+  // 路面のリアリティ：補修跡・タイヤの通り道（黒ずみ）・路肩の砂・芝のむら
+  drawSurface(ctx, s, at, Q, yTop, y1, w1, w2, x1, x2, f) {
+    const h = hash(s.index);
+    // 補修されたアスファルト（ところどころ色が違う帯）
+    if (h < 0.14) { const [p1, p2] = at(-1), [q1, q2] = at(1); ctx.globalAlpha = 0.5; Q(h < 0.07 ? [60, 62, 66] : [112, 114, 118], 1, p1, q1, p2, q2); ctx.globalAlpha = 1; }
+    // 各車線のタイヤの通り道（2本ずつ暗くなる）
+    ctx.globalAlpha = 0.16 + 0.1 * (1 - f);
+    for (let i = 0; i < LANES; i++) {
+      const c = -1 + (2 * i + 1) / LANES;
+      for (const d of [-0.1, 0.1]) { const [p1, p2] = at(c + d - 0.035), [q1, q2] = at(c + d + 0.035); Q([22, 22, 24], 1, p1, q1, p2, q2); }
+    }
+    // 継ぎ目・ひび（細い暗線）
+    if (h > 0.8 && w2 > 16) { ctx.globalAlpha = 0.28; const [p1, p2] = at(-1), [q1, q2] = at(1); poly(ctx, 'rgb(20,20,22)', p1, y1, q1, y1, q2, y1 - 1.4, p2, y1 - 1.4); }
+    // 路肩のほこり・砂（道路の外側が汚れる）
+    ctx.globalAlpha = 0.22;
+    for (const side of [-1, 1]) { const [p1, p2] = at(side * 0.9), [q1, q2] = at(side * 1.0); Q([150, 138, 112], 1, p1, q1, p2, q2); }
+    ctx.globalAlpha = 1;
+    // 芝（または歩道）のむら：道路沿いに濃淡の斑点を散らす
+    if (w2 > 22) {
+      for (let k = 0; k < 4; k++) {
+        const r = hash(s.index * 7 + k * 13), r2 = hash(s.index * 11 + k * 5), side = k % 2 ? 1 : -1;
+        const o = 1.7 + r * 3.2, wd = 0.1 + r2 * 0.28, yy = lerp(y1, yTop, r2);
+        const px = lerp(x1, x2, r2) + side * lerp(w1, w2, r2) * o, ww = lerp(w1, w2, r2) * wd;
+        ctx.fillStyle = r2 > 0.5 ? `rgba(25,60,22,${0.16 * f})` : `rgba(160,200,110,${0.12 * f})`;
+        ctx.fillRect(px - ww / 2, yy, ww, Math.max(1.5, ww * 0.12));
+      }
     }
   }
 
@@ -740,6 +842,9 @@ export class Race {
     const sh = ctx.createRadialGradient(0, 0, 10 * u, 0, 0, 62 * u);
     sh.addColorStop(0, 'rgba(0,0,0,.45)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = sh; ctx.save(); ctx.scale(1, 0.16); ctx.beginPath(); ctx.arc(0, 10 * u, 62 * u, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    // タイヤの接地面の濃い影（地面に押し付けられている感じ）
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    for (const sx of [-1, 1]) { ctx.beginPath(); ctx.ellipse((sx > 0 ? 39 : -39) * u, 2 * u, 17 * u, 3.2 * u, 0, 0, Math.PI * 2); ctx.fill(); }
     // 前輪（ハンドルを切ると少し見える）
     ctx.fillStyle = '#121212';
     const fs = this.steer * 3 * u;
@@ -759,6 +864,9 @@ export class Race {
       const tg = ctx.createLinearGradient(tx, 0, tx + 24 * u, 0);
       tg.addColorStop(0, '#0c0c0c'); tg.addColorStop(0.35, '#2b2b2b'); tg.addColorStop(0.65, '#262626'); tg.addColorStop(1, '#0c0c0c');
       ctx.fillStyle = tg; rrect(ctx, tx, -34 * u, 24 * u, 36 * u, 5 * u);
+      const edge = ctx.createLinearGradient(0, -34 * u, 0, 2 * u);   // 上は日が当たって少し明るく、接地面は暗い
+      edge.addColorStop(0, 'rgba(255,255,255,.14)'); edge.addColorStop(0.4, 'rgba(255,255,255,0)'); edge.addColorStop(1, 'rgba(0,0,0,.35)');
+      ctx.fillStyle = edge; rrect(ctx, tx, -34 * u, 24 * u, 36 * u, 5 * u);
       ctx.fillStyle = 'rgba(255,255,255,.07)';
       const ph = (now / 1000 * pct * 40) % 1;
       for (let k = 0; k < 4; k++) { const ty = -32 * u + ((k + ph) / 4) * 32 * u; ctx.fillRect(tx + 3 * u, ty, 18 * u, 1.2 * u); }
@@ -766,9 +874,19 @@ export class Race {
     // ディフューザー
     ctx.fillStyle = '#161616'; ctx.fillRect(-24 * u, -12 * u, 48 * u, 10 * u);
     ctx.fillStyle = '#2c2c2c'; for (let k = -2; k <= 2; k++) ctx.fillRect(k * 9 * u - 0.8 * u, -12 * u, 1.6 * u, 10 * u);
+    ctx.fillStyle = 'rgba(255,255,255,.07)';   // カーボンの織り目
+    for (let ix = 0; ix < 12; ix++) for (let iy = 0; iy < 3; iy++) if ((ix + iy) % 2 === 0) ctx.fillRect(-24 * u + ix * 4 * u, -12 * u + iy * 3.3 * u, 4 * u, 3.3 * u);
     // 車体の後ろ（バッテリーの箱が入っている）
     ctx.fillStyle = bodyG;
     ctx.beginPath(); ctx.moveTo(-26 * u, -12 * u); ctx.lineTo(26 * u, -12 * u); ctx.lineTo(17 * u, -40 * u); ctx.lineTo(-17 * u, -40 * u); ctx.closePath(); ctx.fill();
+    // クリアコートのつや（左上から光が当たる）：車体全体に明暗と細いハイライトを重ねる
+    const cc = ctx.createLinearGradient(-44 * u, 0, 44 * u, 0);
+    cc.addColorStop(0, 'rgba(255,255,255,.34)'); cc.addColorStop(0.3, 'rgba(255,255,255,0)'); cc.addColorStop(0.62, 'rgba(0,10,40,0)'); cc.addColorStop(1, 'rgba(0,10,40,.42)');
+    ctx.fillStyle = cc;
+    ctx.beginPath(); ctx.moveTo(-44 * u, -20 * u); ctx.lineTo(-40 * u, -34 * u); ctx.lineTo(40 * u, -34 * u); ctx.lineTo(44 * u, -20 * u); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-26 * u, -12 * u); ctx.lineTo(26 * u, -12 * u); ctx.lineTo(17 * u, -40 * u); ctx.lineTo(-17 * u, -40 * u); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.1 * u; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-38 * u, -33 * u); ctx.lineTo(-12 * u, -33.5 * u); ctx.moveTo(-23 * u, -14 * u); ctx.lineTo(-17 * u, -38 * u); ctx.stroke();
     ctx.fillStyle = '#ffffff'; ctx.fillRect(-26 * u, -16 * u, 52 * u, 2.2 * u);
     // 高電圧マーク（EV の黄色い三角）
     ctx.fillStyle = '#ffd400'; tri(ctx, 0, -33 * u, -6 * u, -22 * u, 6 * u, -22 * u);
@@ -782,10 +900,14 @@ export class Race {
     ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(0, -48 * u, 8.5 * u, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#1565c0'; ctx.fillRect(-1.6 * u, -56.5 * u, 3.2 * u, 17 * u);
     ctx.fillStyle = '#ffcf3f'; ctx.fillRect(-8.5 * u, -47 * u, 17 * u, 2.4 * u);
+    ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.ellipse(-3.4 * u, -52.5 * u, 2.2 * u, 1.2 * u, -0.6, 0, Math.PI * 2); ctx.fill();   // ヘルメットの反射
     // リアウイング（翼端板 ＋ 2枚の翼）
     ctx.fillStyle = '#222'; ctx.fillRect(-7 * u, -66 * u, 2.4 * u, 26 * u); ctx.fillRect(4.6 * u, -66 * u, 2.4 * u, 26 * u);
     ctx.fillStyle = '#111'; rrect(ctx, -42 * u, -70 * u, 84 * u, 8 * u, 2 * u);
     ctx.fillStyle = '#1565c0'; rrect(ctx, -42 * u, -79 * u, 84 * u, 6 * u, 2 * u);
+    const ws = ctx.createLinearGradient(-42 * u, 0, 42 * u, 0);
+    ws.addColorStop(0, 'rgba(255,255,255,.4)'); ws.addColorStop(0.25, 'rgba(255,255,255,0)'); ws.addColorStop(1, 'rgba(0,0,30,.35)');
+    ctx.fillStyle = ws; rrect(ctx, -42 * u, -79 * u, 84 * u, 6 * u, 2 * u); rrect(ctx, -42 * u, -70 * u, 84 * u, 8 * u, 2 * u);
     ctx.fillStyle = '#e53935'; ctx.fillRect(-45 * u, -84 * u, 4 * u, 28 * u); ctx.fillRect(41 * u, -84 * u, 4 * u, 28 * u);
     ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.max(6, Math.round(6.5 * u))}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('TAKUDEN EV', 0, -65.6 * u);
@@ -794,6 +916,12 @@ export class Race {
     if (braking) { ctx.shadowColor = '#ff1744'; ctx.shadowBlur = 18 * u; }
     ctx.fillRect(-5 * u, -9 * u, 10 * u, 5 * u);
     ctx.shadowBlur = 0;
+    if (braking) {   // ブレーキランプのにじみ（路面にも赤い光が映る）
+      ctx.save(); ctx.globalCompositeOperation = 'screen';
+      const bl = ctx.createRadialGradient(0, -6.5 * u, 0, 0, -6.5 * u, 34 * u);
+      bl.addColorStop(0, 'rgba(255,60,60,.75)'); bl.addColorStop(0.35, 'rgba(255,30,40,.28)'); bl.addColorStop(1, 'rgba(255,0,0,0)');
+      ctx.fillStyle = bl; ctx.beginPath(); ctx.arc(0, -6.5 * u, 34 * u, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    }
     ctx.rotate(-this.steer * 0.035);
     this.drawParticles(ctx, u * 100, true);   // はね飛ぶコーン・火花（車より手前）
     ctx.restore();
