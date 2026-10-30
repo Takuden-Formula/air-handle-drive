@@ -54,6 +54,19 @@ const BARRIER_H = 260;      // ガードレールの高さ（ワールド単位�
 const KERB_CURVE = 1.2;     // これよりきついカーブに縁石と砂利（グラベル）を置く
 const TREE_SCALE = { pine: 0.8, round: 1, poplar: 0.6, bush: 1 };  // 木の画像ごとの大きさの補正
 
+// コースの種類（最初に選ぶ）
+export const COURSES = {
+  city: { name: '市街地', desc: 'ビルの間の直角コーナーとシケイン', icon: '🏙️' },
+  circuit: { name: 'サーキット', desc: '縁石と砂利のある本格コース', icon: '🏁' },
+  highway: { name: '高速', desc: '長い直線と大きなカーブ。前の車を追い越す', icon: '🛣️' },
+};
+// コースごとの見た目（地面・壁・背景）
+const THEMES = {
+  circuit: { ground1: [86, 156, 72], ground2: [76, 144, 64], road: [92, 94, 98], wall: 'armco', bg: 'mountains', off: 'grass' },
+  city: { ground1: [170, 168, 160], ground2: [158, 156, 148], road: [84, 86, 90], wall: 'concrete', bg: 'city', off: 'pavement' },
+  highway: { ground1: [92, 150, 74], ground2: [84, 140, 68], road: [88, 90, 94], wall: 'sound', bg: 'mountains', off: 'grass' },
+};
+
 const C = {
   sky1: [46, 120, 204], sky2: [150, 196, 232], fog: [205, 222, 232],
   road: [92, 94, 98], roadLine: [238, 238, 232], kerbR: [214, 40, 40], kerbW: [242, 242, 242],
@@ -90,14 +103,29 @@ function mulberry32(a) {
 export class Race {
   constructor() {
     this.segments = []; this.skyOffset = 0; this.cx = 0.5;  // cx: 画面上の道路・車の中心（横位置の割合）
-    this.showMap = true; this.particles = []; this.mapPts = [];
+    this.showMap = true; this.particles = []; this.mapPts = []; this.traffic = []; this.theme = THEMES.circuit; this.type = 'circuit';
     this.quality = 1;   // 0 = 軽量（雲・遠くの林を省く。遅い PC 用）
     this.reset();
   }
 
   // ---------- コース生成 ----------
-  build({ length = 'normal', cones = true, seed = 7 } = {}) {
-    this.segments = [];
+  build({ type = 'circuit', length = 'normal', cones = true, seed = 7 } = {}) {
+    this.segments = []; this.traffic = [];
+    this.type = THEMES[type] ? type : 'circuit'; this.theme = THEMES[this.type];
+    if (this.type === 'city') this.buildCity(length, cones, seed);
+    else if (this.type === 'highway') this.buildHighway(length, cones, seed);
+    else this.buildCircuit(length, cones, seed);
+    this.segments.forEach((sg) => sg.sprites.sort((a, b) => Math.abs(b.offset) - Math.abs(a.offset)));  // 外側の物を先に描く
+    // コースマップ（カーブ量を積分して平面図にする。ゴールまで）
+    const segs = this.segments; let x = 0, y = 0, h = -Math.PI / 2; this.mapPts = [];
+    for (let n = 0; n <= this.finishSeg && n < segs.length; n++) { h += segs[n].curve * 0.0062; x += Math.cos(h); y += Math.sin(h); if (n % 3 === 0 || n === this.finishSeg) this.mapPts.push([x, y]); }
+    this.trackLength = this.segments.length * SEG;
+    this.finishZ = this.finishSeg * SEG;
+    this.reset();
+  }
+
+  // ---------- サーキット ----------
+  buildCircuit(length, cones, seed) {
     const rnd = mulberry32(seed);
     const L = { s: 15, m: 30, l: 60 }, C = { e: 2, m: 4, h: 6 }, Hh = { l: 12, m: 24, h: 36 };
     const road = (e, h, l, c, y) => this.addRoad(e, h, l, c, y);
@@ -157,25 +185,117 @@ export class Race {
       });
     }
     this.decorate(seed);
-    this.trackLength = this.segments.length * SEG;
-    this.finishZ = this.finishSeg * SEG;
-    this.reset();
+  }
+
+  // カーブの区間（向きと強さ）を調べ、縁石の印を付ける
+  findCorners(kerbs = true) {
+    const segs = this.segments, corners = [];
+    for (let n = 0; n < segs.length; n++) {
+      const c = segs[n].curve, on = Math.abs(c) > KERB_CURVE;
+      segs[n].kerb = kerbs && on;
+      segs[n].stripe = Math.floor(n / 6) % 2;
+      segs[n].shade = segs[n].light ? 0.015 : -0.015;
+      if (on && (!corners.length || corners[corners.length - 1].end < n - 1)) corners.push({ start: n, end: n, dir: Math.sign(c), peak: 0 });
+      if (on) { const k = corners[corners.length - 1]; k.end = n; k.peak = Math.max(k.peak, Math.abs(c)); }
+    }
+    return corners;
+  }
+  // コーンを置く。zones: [開始, 終了, 'slalom'|'lane']
+  placeCones(zones, rnd) {
+    zones.forEach(([a, b, kind]) => {
+      let k = 0;
+      for (let n = a + 10; n < b - 5; n += kind === 'slalom' ? 22 : 30) {
+        const offs = kind === 'slalom' ? [(k % 2 ? 1 : -1) * 0.45] : (() => { const free = Math.floor(rnd() * 3); return [-0.66, 0, 0.66].filter((_, i) => i !== free); })();
+        offs.forEach((o) => this.segments[n].sprites.push({ type: 'cone', offset: o, w: 0.14 }));
+        k++;
+      }
+    });
+  }
+
+  // ---------- 市街地：ビルの谷間。直角コーナー・ヘアピン・シケインが続く ----------
+  buildCity(length, cones, seed) {
+    const rnd = mulberry32(seed + 101), zones = [];
+    const road = (e, h, l, c, y = 0) => this.addRoad(e, h, l, c, y);
+    const straight = (n, y = 0) => road(n, n, n, 0, y);
+    const zone = (kind, fn) => { const a = this.segments.length; fn(); zones.push([a, this.segments.length, kind]); };
+    const corner = (d) => road(10, 25, 10, d * 6);
+    const hairpin = (d) => road(12, 40, 12, d * 7);
+    const chicane = (d) => { road(8, 10, 8, -d * 5); road(8, 10, 8, d * 5); };
+    const A = () => { corner(1); zone('slalom', () => straight(30)); corner(-1); straight(20, 6); chicane(1); zone('lane', () => straight(30));
+      hairpin(1); straight(25, -8); corner(-1); corner(1); zone('slalom', () => straight(30)); corner(-1); straight(30); };
+    const B = () => { chicane(-1); zone('lane', () => straight(30)); hairpin(-1); straight(30, 10); corner(1); zone('slalom', () => straight(30));
+      corner(1); straight(25, -10); corner(-1); chicane(1); straight(20); };
+    straight(15);
+    A(); if (length !== 'short') B(); if (length === 'long') { A(); }
+    corner(1); straight(15);
+    this.finishSeg = this.segments.length;
+    straight(60); straight(60);
+    if (cones) this.placeCones(zones, rnd);
+    const segs = this.segments, N = segs.length, add = (n, sp) => { if (segs[n]) segs[n].sprites.push(sp); };
+    const corners = this.findCorners(true);
+    segs.forEach((sg) => { sg.wall = 'concrete'; });
+    for (const k of corners) {
+      const out = -k.dir;
+      for (let n = k.start - 2; n <= k.end + 6; n++) if (segs[n]) segs[n].tires = out;
+      for (let n = k.start + 2; n < k.end; n += 8) add(n, { type: k.dir > 0 ? 'chevR' : 'chevL', offset: out * (BARRIER - 0.15), w: 0.5 });
+      if (k.peak >= 6.5) for (let n = k.start; n < k.end; n += 6) add(n, { type: 'crowd', offset: out * (BARRIER + 0.9), w: 2.2 });
+    }
+    // ビル（両側にすき間なく）・街灯・街路樹・信号・歩道橋
+    const BLD = ['bld1', 'bld2', 'bld3', 'bld4', 'bld5', 'bld6'];
+    for (const side of [-1, 1]) for (let n = 2; n < N; n += 5 + Math.floor(rnd() * 4)) {
+      add(n, { type: BLD[Math.floor(rnd() * BLD.length)], offset: side * (BARRIER + 1.8 + rnd() * 0.8), w: 2.6 + rnd() * 0.8 });
+    }
+    for (let n = 6; n < N; n += 16) {
+      add(n, { type: 'lampL', offset: -(BARRIER + 0.25), w: 0.9 }); add(n + 8, { type: 'lampR', offset: BARRIER + 0.25, w: 0.9 });
+      add(n + 4, { type: 'round', offset: (n % 32 ? -1 : 1) * (BARRIER + 0.75), w: 0.7, deco: true });
+    }
+    for (let n = 60; n < N - 20; n += 110) { add(n, { type: 'sigL', offset: -(BARRIER + 0.2), w: 0.8 }); add(n, { type: 'sigR', offset: BARRIER + 0.2, w: 0.8 }); }
+    for (let n = 260; n < this.finishSeg - 60; n += 420) add(n, { type: 'bridge', offset: 0, w: 2.9 });
+    for (let n = 0; n < 30; n += 3) add(n, { type: 'stand', offset: (n % 2 ? -1 : 1) * (BARRIER + 1.1), w: 2.6 });
+    for (let n = this.finishSeg - 20; n < this.finishSeg + 20; n += 3) add(n, { type: 'stand', offset: (n % 2 ? -1 : 1) * (BARRIER + 1.1), w: 2.6 });
+    add(9, { type: 'start', offset: 0, w: 2.4 }); add(this.finishSeg, { type: 'gate', offset: 0, w: 2.4 });
+  }
+
+  // ---------- 高速道路：長い直線と大きなカーブ。前を走る車を追い越す ----------
+  buildHighway(length, cones, seed) {
+    const rnd = mulberry32(seed + 202);
+    const road = (e, h, l, c, y = 0) => this.addRoad(e, h, l, c, y);
+    const straight = (n, y = 0) => road(n, n, n, 0, y);
+    const A = () => { road(30, 50, 30, 2, 15); straight(40); road(40, 60, 40, -2.5, -25); straight(40, 40); road(30, 60, 30, 3);
+      straight(30); road(40, 40, 40, -2, -30); };
+    const B = () => { straight(50); road(30, 60, 30, 2.5, 30); road(30, 60, 30, -2.5, -30); straight(40, -20); road(30, 50, 30, 2); straight(40); };
+    straight(15);
+    A(); if (length !== 'short') B(); if (length === 'long') { straight(30); A(); }
+    straight(30);
+    this.finishSeg = this.segments.length;
+    straight(60); straight(60);
+    // 高速はコーンを置かない（障害物は前を走る車。「コーン」の設定を OFF にすると車も走らない）
+    const segs = this.segments, N = segs.length, add = (n, sp) => { if (segs[n]) segs[n].sprites.push(sp); };
+    this.findCorners(false);
+    segs.forEach((sg) => { sg.wall = 'sound'; });
+    for (let n = 12; n < N; n += 24) { add(n, { type: 'hwLampL', offset: -(BARRIER - 0.05), w: 1.1 }); add(n + 12, { type: 'hwLampR', offset: BARRIER - 0.05, w: 1.1 }); }
+    for (let n = 50; n < N; n += 50) add(n, { type: 'kmPost', offset: BARRIER - 0.12, w: 0.18 });
+    add(Math.floor(this.finishSeg * 0.35), { type: 'hwSign1', offset: 0, w: 2.6 });
+    add(Math.max(60, this.finishSeg - 160), { type: 'hwSign2', offset: 0, w: 2.6 });
+    for (let n = 5; n < N; n += 2) if (rnd() < 0.6) {
+      const type = rnd() < 0.5 ? 'pine' : 'round';
+      add(n, { type, offset: (rnd() < 0.5 ? -1 : 1) * (BARRIER + 1 + rnd() * 6), w: (1.1 + rnd() * 0.6) * TREE_SCALE[type], deco: n % 4 !== 1 });
+    }
+    add(9, { type: 'toll', offset: 0, w: 2.7 }); add(this.finishSeg, { type: 'gate', offset: 0, w: 2.4 });
+    // 前を走る車（3車線に1台ずつ間をあけて置く。どの車線も 60〜70 km/h で走る）
+    const kinds = ['carWhite', 'carRed', 'carBlack', 'carBlue', 'truck'];
+    if (cones) for (let n = 70; n < this.finishSeg - 20; n += 22 + Math.floor(rnd() * 18)) {
+      const kind = kinds[Math.floor(rnd() * kinds.length)];
+      this.traffic.push({ z0: n * SEG, x: [-0.66, 0, 0.66][Math.floor(rnd() * 3)], v: (60 + rnd() * 10) / 3.6 * UNITS_PER_M, kind, w: kind === 'truck' ? 0.5 : 0.38 });
+    }
   }
 
   // サーキットらしい景色: 縁石・グラベル・ガードレール・スタンド・ピット・看板・カーブの矢印・距離看板・コースマップ
   decorate(seed) {
     const segs = this.segments, N = segs.length, rnd = mulberry32(seed * 7919 + 13);
     const add = (n, sp) => { if (segs[n]) segs[n].sprites.push(sp); };
-    // カーブの区間（向きと強さ）を調べる
-    const corners = [];
-    for (let n = 0; n < N; n++) {
-      const c = segs[n].curve, on = Math.abs(c) > KERB_CURVE;
-      segs[n].kerb = on;
-      segs[n].stripe = Math.floor(n / 6) % 2;         // 芝刈りのしま模様
-      segs[n].shade = segs[n].light ? 0.015 : -0.015;  // 舗装のむら（3セグメントごとに少し明暗。速さが分かりやすい）
-      if (on && (!corners.length || corners[corners.length - 1].end < n - 1)) corners.push({ start: n, end: n, dir: Math.sign(c), peak: 0 });
-      if (on) { const k = corners[corners.length - 1]; k.end = n; k.peak = Math.max(k.peak, Math.abs(c)); }
-    }
+    // カーブの区間（向きと強さ）を調べる。芝刈りのしま模様と舗装のむらもここで付ける
+    const corners = this.findCorners(true);
     for (const k of corners) {
       const out = -k.dir;   // 右カーブ（curve>0）の外側は左
       // 外側のグラベル（砂利）とタイヤバリア
@@ -212,12 +332,6 @@ export class Race {
     for (let n = 5; n < N; n += 2) {
       if (rnd() < 0.55) { const type = rnd() < 0.3 ? 'bush' : (rnd() < 0.6 ? 'pine' : 'round'); add(n, { type, offset: (rnd() < 0.5 ? -1 : 1) * (BARRIER + 3.5 + rnd() * 5), w: (1 + rnd() * 0.6) * TREE_SCALE[type], deco: true }); }
     }
-    // 奥の物から描くよう、セグメント内では外側の物を先に並べる
-    segs.forEach((s) => s.sprites.sort((a, b) => Math.abs(b.offset) - Math.abs(a.offset)));
-
-    // コースマップ（カーブ量を積分して平面図にする。ゴールまで）
-    let x = 0, y = 0, h = -Math.PI / 2; this.mapPts = [];
-    for (let n = 0; n <= this.finishSeg && n < N; n++) { h += segs[n].curve * 0.0062; x += Math.cos(h); y += Math.sin(h); if (n % 3 === 0 || n === this.finishSeg) this.mapPts.push([x, y]); }
   }
 
   lastY() { return this.segments.length ? this.segments[this.segments.length - 1].p2.world.y : 0; }
@@ -243,6 +357,7 @@ export class Race {
     this.finished = false; this.offroad = false; this.events = []; this.steer = 0; this.shake = 0;
     this.surface = 'road'; this.particles = []; this.rpm = 0; this.torque = 0; this.onKerb = false;
     this.segments.forEach((s) => s.sprites.forEach((sp) => { sp.hit = false; }));
+    (this.traffic || []).forEach((t) => { t.z = t.z0; t.hit = false; t.dx = 0; });
   }
 
   // 0〜1 のコース進捗
@@ -282,7 +397,7 @@ export class Race {
       this.speed -= (CAR.regen + (0.5 * 1.2 * CAR.cda * vms * vms) / CAR.mass) * UNITS_PER_M * dt; this.torque = this.speed > 1 ? -CAR.torque * 0.5 : 0;
     }
     this.offroad = Math.abs(this.playerX) > 1;
-    this.surface = !this.offroad ? 'road' : (seg.gravel && Math.sign(this.playerX) === seg.gravel ? 'gravel' : 'grass');
+    this.surface = !this.offroad ? 'road' : (seg.gravel && Math.sign(this.playerX) === seg.gravel ? 'gravel' : this.theme.off);
     this.onKerb = seg.kerb && Math.abs(this.playerX) > 1 - CAR_HALF && Math.abs(this.playerX) < 1.14 + CAR_HALF;
     if (this.offroad && this.speed > OFFROAD_LIMIT) this.speed += OFFROAD_DECEL * dt;
 
@@ -295,6 +410,16 @@ export class Race {
           sp.hit = true; this.speed *= 0.5; this.coneHits++; this.events.push('cone'); this.shake = 0.3;
           this.spawnCone(this.playerX - sp.offset);
         }
+      }
+    }
+    // 前を走る車（高速）。追いついてぶつかると、コーンと同じく大きく減速して +1 秒
+    const pz = this.position + PLAYER_Z;
+    for (const t of this.traffic) {
+      t.z += t.v * dt; t.dx *= 0.97;
+      if (t.hit || Math.abs(t.z - pz) > SEG * 0.7) continue;
+      if (Math.abs(this.playerX - (t.x + t.dx)) < (CAR_HALF + t.w * 0.5) * 0.9) {
+        t.hit = true; this.speed = Math.min(this.speed * 0.5, t.v * 0.8); this.coneHits++; this.events.push('car'); this.shake = 0.4;
+        t.dx = (t.x + t.dx > this.playerX ? 1 : -1) * 0.3; this.spawnSparks(Math.sign(t.x - this.playerX) || 1);
       }
     }
     // ガードレールにぶつかる
@@ -311,17 +436,27 @@ export class Race {
     if (!this.finished && this.position + PLAYER_Z >= this.finishZ) { this.finished = true; this.events.push('finish'); }
   }
 
-  // 自動運転（待機画面のデモ・テスト用）: コーンをよけながら道路の中央付近を走る
+  // 自動運転（待機画面のデモ・テスト用）: コーンをよけ、前の車（高速）が近ければ空いている車線へ移る
   autopilot() {
-    const seg = this.findSegment(this.position + PLAYER_Z);
-    let target = 0;
-    for (let n = 2; n < 40; n++) {
+    const seg = this.findSegment(this.position + PLAYER_Z), pz = this.position + PLAYER_Z;
+    const LN = [-0.66, 0, 0.66];
+    let free = null;   // 先にあるコーンをよけられる車線
+    for (let n = 2; n < 40 && !free; n++) {
       const s = this.segments[seg.index + n]; if (!s) break;
       const cones = s.sprites.filter((sp) => sp.type === 'cone' && !sp.hit);
-      if (!cones.length) continue;
-      const lanes = [-0.66, 0, 0.66].filter((x) => cones.every((c) => Math.abs(c.offset - x) > 0.4));
-      target = lanes.length ? lanes.reduce((a, b) => (Math.abs(b - this.playerX) < Math.abs(a - this.playerX) ? b : a)) : 0;
-      break;
+      if (cones.length) free = LN.filter((x) => cones.every((c) => Math.abs(c.offset - x) > 0.4));
+    }
+    const near = (xs, x0) => xs.slice().sort((a, b) => Math.abs(a - x0) - Math.abs(b - x0));
+    let cand = free ? near(free, this.playerX) : [0, ...near([-0.66, 0.66], this.playerX)];
+    if (!cand.length) cand = [0];
+    let target = cand[0];
+    if (this.traffic.length) {
+      // 車線ごとに、いちばん近い前の車までの距離（横に並んでいる車は 0 とみなす）
+      const gap = (x) => this.traffic.reduce((g, t) => (!t.hit && Math.abs(t.x + t.dx - x) < 0.4 && t.z > pz - SEG * 0.8 ? Math.min(g, Math.max(0, t.z - pz)) : g), Infinity);
+      // 2車線またぐときは、まん中の車線も空いていること
+      const pass = (x) => gap(x) > SEG * 35 && (Math.abs(x - this.playerX) < 1 || gap(0) > SEG * 8);
+      const ok = cand.find(pass);
+      target = ok !== undefined ? ok : cand.reduce((a, b) => (gap(b) > gap(a) ? b : a));
     }
     const pct = this.speed / MAX_SPEED;
     return clamp((target - this.playerX) * 2.5 + seg.curve * CENTRIFUGAL * pct, -1, 1);
@@ -338,7 +473,7 @@ export class Race {
   }
   stepParticles(dt) {
     const pct = this.speed / MAX_SPEED;
-    if (this.offroad && pct > 0.08) {
+    if (this.offroad && pct > 0.08 && this.surface !== 'pavement') {
       const n = Math.random() < pct * 1.8 ? 2 : 0;
       for (let i = 0; i < n; i++) {
         const side = i % 2 ? 1 : -1;
@@ -399,12 +534,20 @@ export class Race {
       } else s.ext = null;
       for (let i = 1; i < vis.length; i++) vis[i].ext = null;
     }
+    // 前を走る車を、見えているセグメントに割り当てる
+    const frame = (this._frame = (this._frame || 0) + 1);
+    for (const s of vis) { s.cars = null; s.carFrame = frame; }
+    for (const t of this.traffic) {
+      const sg = segs[Math.floor(t.z / SEG)];
+      if (sg && sg.carFrame === frame) (sg.cars || (sg.cars = [])).push(t);
+    }
     for (let i = vis.length - 1; i >= 0; i--) {
       const s = vis[i];
       if (s.drawn) this.drawSegment(ctx, W, H, s);
       for (const sp of s.sprites) if (Math.abs(sp.offset) > BARRIER) this.drawSprite(ctx, s, sp);
       if (s.drawn) this.drawBarrier(ctx, H, s);
       for (const sp of s.sprites) if (Math.abs(sp.offset) <= BARRIER) this.drawSprite(ctx, s, sp);
+      if (s.cars) for (const t of s.cars) this.drawSprite(ctx, s, { type: t.kind, offset: t.x + t.dx, w: t.w }, (t.z % SEG) / SEG);
     }
     this.drawCar(ctx, W, H, now);
     ctx.restore();
@@ -439,6 +582,7 @@ export class Race {
       ctx.globalAlpha = 0.85; ctx.drawImage(img, px, hy * (0.1 + (i * 0.13) % 0.45), cw, ch);
     }
     ctx.globalAlpha = 1;
+    if (this.theme.bg === 'city') { this.drawSkyline(ctx, W, H, hy); return; }
     // 山と丘（遠いほど霞んで青っぽい）。カーブで左右に流れる
     const layers = [
       { c: [150, 178, 204], h: 0.2, k: 0.25, f: 2, j: 0.15 },
@@ -470,6 +614,18 @@ export class Race {
     ctx.fillStyle = FOG_CSS; ctx.fillRect(0, hy, W, H - hy);
   }
 
+  // 市街地の背景：遠くのビル群（2段。カーブで左右に流れる）
+  drawSkyline(ctx, W, H, hy) {
+    for (const [img, k, hh] of [[SPR.skyFar, 0.3, 0.28], [SPR.skyNear, 0.7, 0.2]]) {
+      const tw = W * 1.4, th = H * hh, off = ((this.skyOffset * k * W) % tw + tw) % tw;
+      for (let x = -off; x < W; x += tw) ctx.drawImage(img, x, hy - th + 2, tw + 1, th);
+    }
+    const hz = ctx.createLinearGradient(0, hy - H * 0.05, 0, hy + 4);
+    hz.addColorStop(0, 'rgba(205,222,232,0)'); hz.addColorStop(1, 'rgba(205,222,232,.7)');
+    ctx.fillStyle = hz; ctx.fillRect(0, hy - H * 0.05, W, H * 0.05 + 4);
+    ctx.fillStyle = FOG_CSS; ctx.fillRect(0, hy, W, H - hy);
+  }
+
   drawSegment(ctx, W, H, s) {
     const a = s.ext || s.p1.screen, b = s.p2.screen;
     const x1 = a.x, y1 = a.y, w1 = a.w, x2 = b.x, w2 = b.w;
@@ -482,7 +638,8 @@ export class Race {
     const at = (o) => [x1 + w1 * o, x2 + w2 * o];   // 道路の中心からの位置 o（半幅=1）の画面 x
 
     // 芝生（しま模様）
-    ctx.fillStyle = fogc(s.stripe ? C.grass1 : C.grass2, f, lit); ctx.fillRect(0, b.y + 0.5, W, y1 - b.y + 0.5);
+    const T = this.theme;
+    ctx.fillStyle = fogc(s.stripe ? T.ground1 : T.ground2, f, lit); ctx.fillRect(0, b.y + 0.5, W, y1 - b.y + 0.5);
     // 外側のグラベル（砂利）
     if (s.gravel) {
       const g = s.gravel, [i1, i2] = at(g * 1.14), [o1, o2] = at(g * BARRIER);
@@ -492,11 +649,11 @@ export class Race {
     const kw = s.kerb ? 0.14 : 0.05;
     for (const side of [-1, 1]) {
       const [e1, e2] = at(side), [k1, k2] = at(side * (1 + kw));
-      Q(s.kerb ? (s.light ? C.kerbW : C.kerbR) : C.road, s.kerb ? 1 : 0.92, e1, k1, e2, k2);
+      Q(s.kerb ? (s.light ? C.kerbW : C.kerbR) : T.road, s.kerb ? 1 : 0.92, e1, k1, e2, k2);
     }
     // 舗装
     const [l1, l2] = at(-1), [r1, r2] = at(1);
-    Q(C.road, 1 + s.shade, l1, r1, l2, r2);
+    Q(T.road, 1 + s.shade, l1, r1, l2, r2);
     if (w2 < 6) return;   // 遠くて細いときは細かい線を省く
     // 白線（両端）
     for (const side of [-1, 1]) { const [p1, p2] = at(side * 0.965), [q1, q2] = at(side * 0.995); Q(C.roadLine, 1, p1, q1, p2, q2); }
@@ -509,7 +666,7 @@ export class Race {
       }
     } else if (s.index >= 2 && s.index <= 8) {          // スタートのグリッド（白いかぎ形）
       if (s.index % 3 === 2) for (const o of [-0.55, 0.15]) { const [p1, p2] = at(o), [q1, q2] = at(o + 0.4); Q(C.roadLine, 1, p1, q1, p2, q2); }
-    } else if (s.light && s.index % 2 === 0) {            // 車線の破線
+    } else if (s.light && (this.type === 'highway' || s.index % 2 === 0)) {   // 車線の破線（高速は長い破線）
       const lw = 0.025;
       for (let i = 1; i < LANES; i++) { const o = -1 + (2 * i) / LANES, [p1, p2] = at(o - lw), [q1, q2] = at(o + lw); Q(C.roadLine, 0.95, p1, q1, p2, q2); }
     }
@@ -527,6 +684,19 @@ export class Race {
         poly(ctx, fogc(C.tire, f), bx1, a.y, bx2, b.y, bx2, b.y - h2 * 1.1, bx1, a.y - h1 * 1.1);
         const c = s.light ? C.kerbR : C.kerbW;
         poly(ctx, fogc(c, f), bx1, a.y - h1 * 0.55, bx2, b.y - h2 * 0.55, bx2, b.y - h2 * 0.85, bx1, a.y - h1 * 0.85);
+      } else if (s.wall === 'concrete') {
+        // 市街地：コンクリートの壁（青白の帯）＋ 上に金網
+        poly(ctx, fogc([196, 196, 190], f), bx1, a.y, bx2, b.y, bx2, b.y - h2 * 0.9, bx1, a.y - h1 * 0.9);
+        poly(ctx, fogc(s.light ? [30, 90, 170] : [235, 235, 230], f), bx1, a.y - h1 * 0.6, bx2, b.y - h2 * 0.6, bx2, b.y - h2 * 0.9, bx1, a.y - h1 * 0.9);
+        if (this.quality && h1 > 3) {
+          ctx.globalAlpha = 0.22; poly(ctx, fogc([60, 60, 60], f), bx1, a.y - h1 * 0.9, bx2, b.y - h2 * 0.9, bx2, b.y - h2 * 2.6, bx1, a.y - h1 * 2.6); ctx.globalAlpha = 1;
+          if (s.index % 3 === 0) { const pw = Math.max(1, a.w * 0.02); ctx.fillStyle = fogc([80, 80, 84], f); ctx.fillRect(bx1 - pw / 2, a.y - h1 * 2.6, pw, h1 * 1.7); }
+        }
+      } else if (s.wall === 'sound') {
+        // 高速：防音壁（下はコンクリート、上は半透明の板）
+        poly(ctx, fogc([178, 180, 176], f), bx1, a.y, bx2, b.y, bx2, b.y - h2 * 0.8, bx1, a.y - h1 * 0.8);
+        ctx.globalAlpha = 0.7; poly(ctx, fogc([168, 192, 206], f), bx1, a.y - h1 * 0.8, bx2, b.y - h2 * 0.8, bx2, b.y - h2 * 2.2, bx1, a.y - h1 * 2.2); ctx.globalAlpha = 1;
+        if (s.index % 2 === 0 && h1 > 4) { const pw = Math.max(1, a.w * 0.025); ctx.fillStyle = fogc([110, 116, 124], f); ctx.fillRect(bx1 - pw / 2, a.y - h1 * 2.2, pw, h1 * 2.2); }
       } else {
         // ガードレール：支柱 ＋ 波板
         poly(ctx, fogc(C.armcoDark, f), bx1, a.y, bx2, b.y, bx2, b.y - h2 * 0.45, bx1, a.y - h1 * 0.45);
@@ -537,11 +707,12 @@ export class Race {
     }
   }
 
-  drawSprite(ctx, s, sp) {
+  drawSprite(ctx, s, sp, pct = 0) {
     if (sp.hit || (sp.deco && !this.quality)) return;
     const img = SPR[sp.type]; if (!img) return;
-    const sc = s.p1.screen;
     if (s.p1.camera.z <= CAM_DEPTH) return;
+    const a = s.p1.screen, b = s.p2.screen;
+    const sc = pct ? { x: lerp(a.x, b.x, pct), y: lerp(a.y, b.y, pct), w: lerp(a.w, b.w, pct) } : a;
     const dw = sc.w * sp.w, dh = dw * img.height / img.width;
     if (dw < 1.2 || dw > 6000) return;
     const x = sc.x + sp.offset * sc.w - dw / 2, y = sc.y - dh;
@@ -860,5 +1031,138 @@ function makeSprites() {
       g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
     }
   }));
+  makeCitySprites(R); makeHighwaySprites(R);
   SPR.ready = true;
+}
+
+// ---------- 市街地の絵 ----------
+function makeCitySprites(R) {
+  // ビル（窓・1階のお店・屋上）
+  const SHOPS = [['ラーメン', '#c62828'], ['カフェ', '#6d4c41'], ['書店', '#1565c0'], ['薬局', '#2e7d32'], ['TAKUDEN', '#0d47a1'], ['パン', '#ef6c00'], ['電気', '#455a64']];
+  const bld = (wPx, hPx, wall, glass, kind) => canvas(wPx, hPx, (g, w, h) => {
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(6, h - 8, w - 6, 8);
+    const gr = g.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, wall[0]); gr.addColorStop(1, wall[1]);
+    g.fillStyle = gr; g.fillRect(0, 0, w, h - 4);
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(0, 0, w, 10);                 // 屋上のふち
+    const shopH = 90, cols = Math.floor(w / 46), rows = Math.floor((h - shopH - 30) / (kind === 'glass' ? 30 : 44));
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = 12 + c * (w - 24) / cols, y = 24 + r * (kind === 'glass' ? 30 : 44);
+      g.fillStyle = R() < 0.15 ? '#fff6c8' : glass; g.fillRect(x, y, (w - 24) / cols - 10, kind === 'glass' ? 24 : 30);
+      if (kind !== 'glass') { g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(x, y, (w - 24) / cols - 10, 4); }
+    }
+    // 1階のお店（ひさしと看板）
+    const [name, col] = SHOPS[Math.floor(R() * SHOPS.length)];
+    g.fillStyle = '#2b2b2b'; g.fillRect(8, h - shopH, w - 16, shopH - 4);
+    g.fillStyle = '#9fc6d8'; g.fillRect(18, h - shopH + 30, w - 36, shopH - 40);
+    g.fillStyle = col; g.fillRect(4, h - shopH - 6, w - 8, 34);
+    g.fillStyle = '#fff'; g.font = 'bold 24px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, w / 2, h - shopH + 12);
+    for (let x = 4; x < w - 4; x += 24) { g.fillStyle = x / 24 % 2 ? col : '#f5f5f5'; g.fillRect(x, h - shopH + 28, 24, 10); }
+  });
+  SPR.bld1 = bld(300, 760, ['#c9c3b8', '#a59e92'], '#58707f', 'office');
+  SPR.bld2 = bld(340, 900, ['#7d93a8', '#5b7086'], '#2f4a63', 'glass');
+  SPR.bld3 = bld(280, 560, ['#d9b38c', '#b38d68'], '#4e5d66', 'office');
+  SPR.bld4 = bld(320, 680, ['#e0e0e0', '#bdbdbd'], '#607d8b', 'office');
+  SPR.bld5 = bld(300, 980, ['#8aa0b0', '#60798c'], '#3b5a72', 'glass');
+  SPR.bld6 = bld(260, 480, ['#b07a5a', '#8e5c40'], '#4a4a4a', 'office');
+  // 街灯（腕が道路の方へのびる）
+  const lamp = (dir) => canvas(160, 420, (g, w, h) => {
+    const px = dir > 0 ? 20 : w - 20;
+    g.fillStyle = '#5f676e'; g.fillRect(px - 4, 40, 8, h - 40);
+    g.strokeStyle = '#5f676e'; g.lineWidth = 7; g.beginPath(); g.moveTo(px, 44); g.quadraticCurveTo(px, 14, px + dir * 60, 14); g.lineTo(px + dir * 120, 18); g.stroke();
+    g.fillStyle = '#3d4247'; g.fillRect(px + dir * 120 - 22, 14, 44, 12); g.fillStyle = '#fff8d0'; g.fillRect(px + dir * 120 - 18, 26, 36, 5);
+  });
+  SPR.lampL = lamp(1); SPR.lampR = lamp(-1);
+  // 信号機（腕の先に横向きの信号）
+  const sig = (dir) => canvas(220, 360, (g, w, h) => {
+    const px = dir > 0 ? 18 : w - 18;
+    g.fillStyle = '#6b7278'; g.fillRect(px - 5, 30, 10, h - 30); g.fillRect(Math.min(px, px + dir * 150), 36, 150, 8);
+    const bx = px + dir * 150 - (dir > 0 ? 0 : 110);
+    g.fillStyle = '#2c3135'; g.fillRect(bx - (dir > 0 ? 110 : 0), 22, 110, 38);
+    ['#2fbf71', '#ffd54f', '#e53935'].forEach((c, i) => { g.fillStyle = i === 0 ? c : '#4a4f53'; g.beginPath(); g.arc(bx - (dir > 0 ? 110 : 0) + 20 + i * 35, 41, 13, 0, Math.PI * 2); g.fill(); });
+    g.fillStyle = '#1565c0'; g.fillRect(px - 40, 110, 80, 30); g.fillStyle = '#fff'; g.font = 'bold 18px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('拓電町', px, 126);
+  });
+  SPR.sigL = sig(1); SPR.sigR = sig(-1);
+  // 歩道橋（道路をまたぐ）
+  SPR.bridge = canvas(900, 420, (g, w, h) => {
+    g.fillStyle = '#3f6e8c'; g.fillRect(0, 120, 28, h - 120); g.fillRect(w - 28, 120, 28, h - 120);
+    g.fillStyle = '#5b8fb0'; g.fillRect(0, 100, w, 46); g.fillStyle = '#e8eef2'; g.fillRect(0, 70, w, 30);
+    g.fillStyle = '#3f6e8c'; for (let x = 10; x < w; x += 26) g.fillRect(x, 70, 6, 30);
+    sign(g, w / 2 - 210, 100, 420, 46, '#0d47a1', '#fff', 'TAKUDEN CITY GP', '900 30px sans-serif');
+  });
+  // 遠くのビル群（横につなげて並べる）
+  const skyline = (wPx, hPx, c1, c2, lit) => canvas(wPx, hPx, (g, w, h) => {
+    let x = 0;
+    while (x < w) {
+      const bw = 40 + R() * 90, bh = h * (0.3 + R() * 0.7); g.fillStyle = R() < 0.5 ? c1 : c2; g.fillRect(x, h - bh, Math.min(bw, w - x), bh);
+      if (lit) { g.fillStyle = 'rgba(255,255,255,.18)'; for (let y = h - bh + 8; y < h - 6; y += 12) for (let xx = x + 6; xx < x + bw - 8 && xx < w - 4; xx += 12) if (R() < 0.6) g.fillRect(xx, y, 6, 6); }
+      if (R() < 0.2) { g.fillStyle = c2; g.fillRect(x + bw / 2 - 2, h - bh - 30, 4, 30); }
+      x += bw + 2;
+    }
+  });
+  SPR.skyFar = skyline(2048, 300, '#a9b8c6', '#9aabbb', false);
+  SPR.skyNear = skyline(2048, 260, '#7c8d9c', '#6d7f8f', true);
+}
+
+// ---------- 高速道路の絵 ----------
+function makeHighwaySprites(R) {
+  // 料金所（スタート）
+  SPR.toll = canvas(900, 440, (g, w, h) => {
+    g.fillStyle = '#e8e8e4'; g.fillRect(0, 40, w, 110); g.fillStyle = '#2e7d32'; g.fillRect(0, 150, w, 14);
+    g.fillStyle = '#1b5e20'; g.font = '900 54px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('拓電 料金所', w / 2 - 120, 95);
+    g.fillStyle = '#7b1fa2'; g.fillRect(w - 250, 62, 170, 66); g.fillStyle = '#fff'; g.font = '900 44px sans-serif'; g.fillText('ETC', w - 165, 96);
+    for (const x of [0, w - 40]) { g.fillStyle = '#cfd2cf'; g.fillRect(x, 164, 40, h - 164); g.fillStyle = '#ffd54f'; for (let y = 180; y < h; y += 40) g.fillRect(x, y, 40, 16); }
+  });
+  // 案内標識（緑の板が道路の上にかかる）
+  const hwSign = (lines) => canvas(900, 460, (g, w, h) => {
+    g.fillStyle = '#7d868c'; g.fillRect(20, 40, 22, h - 40); g.fillRect(w - 42, 40, 22, h - 40); g.fillRect(20, 60, w - 40, 14);
+    g.fillStyle = '#1b7a3a'; g.fillRect(150, 20, w - 300, 200); g.strokeStyle = '#fff'; g.lineWidth = 5; g.strokeRect(158, 28, w - 316, 184);
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '900 60px sans-serif'; g.fillText(lines[0], w / 2, 84); g.font = 'bold 34px sans-serif'; g.fillText(lines[1], w / 2, 150);
+    g.font = 'bold 30px sans-serif'; g.fillText(lines[2], w / 2, 192);
+  });
+  SPR.hwSign1 = hwSign(['拓電 IC', 'TAKUDEN', '出口 2 km']);
+  SPR.hwSign2 = hwSign(['ゴール', 'GOAL', '1 km']);
+  // 照明（腕が道路の方へ）
+  const lamp = (dir) => canvas(200, 480, (g, w, h) => {
+    const px = dir > 0 ? 14 : w - 14;
+    g.fillStyle = '#8a9298'; g.fillRect(px - 5, 20, 10, h - 20);
+    g.strokeStyle = '#8a9298'; g.lineWidth = 8; g.beginPath(); g.moveTo(px, 24); g.lineTo(px + dir * 170, 30); g.stroke();
+    g.fillStyle = '#4c5359'; g.fillRect(px + dir * 170 - 26, 24, 52, 14); g.fillStyle = '#ffe9a8'; g.fillRect(px + dir * 170 - 22, 38, 44, 5);
+  });
+  SPR.hwLampL = lamp(1); SPR.hwLampR = lamp(-1);
+  // キロポスト
+  SPR.kmPost = canvas(60, 160, (g, w, h) => {
+    g.fillStyle = '#888'; g.fillRect(w / 2 - 3, 60, 6, h - 60);
+    g.fillStyle = '#fff'; g.fillRect(4, 6, w - 8, 56); g.strokeStyle = '#1b7a3a'; g.lineWidth = 4; g.strokeRect(4, 6, w - 8, 56);
+    g.fillStyle = '#1b7a3a'; g.font = 'bold 26px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(1 + Math.floor(R() * 9)), w / 2, 34);
+  });
+  // 工事の矢印板
+  SPR.arrow = canvas(200, 220, (g, w, h) => {
+    g.fillStyle = '#444'; g.fillRect(w / 2 - 6, 130, 12, h - 130);
+    g.fillStyle = '#111'; g.fillRect(6, 6, w - 12, 130);
+    g.fillStyle = '#ffb300'; g.beginPath(); g.moveTo(40, 50); g.lineTo(120, 50); g.lineTo(120, 25); g.lineTo(170, 71); g.lineTo(120, 117); g.lineTo(120, 92); g.lineTo(40, 92); g.closePath(); g.fill();
+    for (let x = 6; x < w - 6; x += 30) { g.fillStyle = (x / 30) % 2 ? '#e53935' : '#fff'; g.fillRect(x, 136, 30, 14); }
+  });
+  // 前を走る車（後ろから見た図）
+  const car = (body, dark) => canvas(220, 170, (g, w, h) => {
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(w / 2, h - 6, w * 0.48, 8, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#151515'; g.fillRect(16, h - 40, 34, 34); g.fillRect(w - 50, h - 40, 34, 34);
+    const gr = g.createLinearGradient(0, 30, 0, h - 20); gr.addColorStop(0, body); gr.addColorStop(1, dark);
+    g.fillStyle = gr; g.beginPath(); g.moveTo(40, 20); g.lineTo(w - 40, 20); g.lineTo(w - 8, 80); g.lineTo(w - 8, h - 26); g.lineTo(8, h - 26); g.lineTo(8, 80); g.closePath(); g.fill();
+    g.fillStyle = '#26323a'; g.beginPath(); g.moveTo(48, 28); g.lineTo(w - 48, 28); g.lineTo(w - 26, 74); g.lineTo(26, 74); g.closePath(); g.fill();
+    g.fillStyle = '#e53935'; g.fillRect(14, 92, 40, 16); g.fillRect(w - 54, 92, 40, 16);
+    g.fillStyle = '#fff'; g.fillRect(w / 2 - 30, 108, 60, 26); g.fillStyle = '#1b5e20'; g.font = 'bold 14px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('拓電 5', w / 2, 121);
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(8, h - 30, w - 16, 6);
+  });
+  SPR.carWhite = car('#f4f4f2', '#bfc2c4'); SPR.carRed = car('#d32f2f', '#8e1b1b'); SPR.carBlack = car('#3a3d42', '#16181b'); SPR.carBlue = car('#1e66c8', '#123f80');
+  SPR.truck = canvas(260, 300, (g, w, h) => {
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(w / 2, h - 6, w * 0.48, 8, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#151515'; g.fillRect(14, h - 40, 44, 34); g.fillRect(w - 58, h - 40, 44, 34);
+    g.fillStyle = '#e9ecef'; g.fillRect(6, 6, w - 12, h - 70); g.strokeStyle = '#b0b6bb'; g.lineWidth = 3; g.strokeRect(6, 6, w - 12, h - 70);
+    g.beginPath(); g.moveTo(w / 2, 6); g.lineTo(w / 2, h - 64); g.stroke();
+    g.fillStyle = '#1565c0'; g.font = '900 30px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('拓電運輸', w / 2, 90);
+    g.fillStyle = '#333'; g.fillRect(6, h - 64, w - 12, 26);
+    g.fillStyle = '#e53935'; g.fillRect(10, h - 60, 30, 16); g.fillRect(w - 40, h - 60, 30, 16);
+    g.fillStyle = '#fff'; g.fillRect(w / 2 - 30, h - 62, 60, 22);
+  });
 }

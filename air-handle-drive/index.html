@@ -43,6 +43,14 @@
   #card .choice small { display: block; font-size: .55em; font-weight: bold; opacity: .85; }
   #card .sub { font-size: .7em; color: var(--sub); margin-top: 8px; }
   #card .prizes td:first-child { color: var(--win); }
+  #card .courses { display: flex; gap: 16px; justify-content: center; margin-top: 6px; }
+  #card .course { pointer-events: auto; cursor: pointer; width: min(280px, 19vw); padding: 10px 10px; border-radius: 14px; border: 3px solid rgba(255,255,255,.35);
+    background: rgba(255,255,255,.06); font-size: .62em; text-align: center; transition: transform .15s; }
+  #card .course.sel { border-color: var(--win); background: rgba(255,207,63,.18); transform: scale(1.06); }
+  #card .course .nm { font-size: 1.35em; font-weight: 900; white-space: nowrap; }
+  #card .course svg { width: 100%; height: min(110px, 8vw); }
+  #card .course .ds { color: var(--sub); font-size: .85em; min-height: 2.6em; }
+  #card .times { margin: 0 auto; font-size: .85em; } #card .times td { padding: 0 6px; }
   #holdBar { width: min(600px, 50vw); height: 28px; border-radius: 14px; background: rgba(0,0,0,.4); margin-top: 14px; overflow: hidden; display: none;
     border: 2px solid rgba(255,255,255,.7); }
   #holdBar div { height: 100%; width: 0; background: var(--ok); }
@@ -101,7 +109,7 @@
   <label>カメラ</label>
   <select id="camSel"></select>
 
-  <label>コースの長さ</label>
+  <label>コースの長さ（3 コース共通。コースはお客さんがスタート前に選ぶ）</label>
   <select id="course">
     <option value="short">みじかい</option>
     <option value="normal">ふつう</option>
@@ -116,12 +124,15 @@
   <label>料金 [円]（待機画面に出す）</label>
   <input type="number" id="price" min="0" step="10">
 
-  <label>景品 4 個になるタイム [秒以内]</label>
-  <input type="number" id="t4" min="5" max="600" step="1">
-  <label>景品 3 個になるタイム [秒以内]（これより遅い・完走できないときは 2 個）</label>
-  <input type="number" id="t3" min="5" max="600" step="1">
-  <div class="note">このコース・速度の理論最速 ≒ <b id="ideal"></b> 秒。コーン1本ごとに +1秒。<br>
-    コースや速度を変えると、4 個 ＝ 理論最速 ＋15%、3 個 ＝ ＋35% に自動で設定します（あとから手で変えてよい）。</div>
+  <label>景品の個数になるタイム [秒以内]（コースごと。これより遅い・完走できないときは 2 個）</label>
+  <table id="timesTbl" style="width:100%;font-size:16px;border-collapse:collapse">
+    <tr style="color:var(--sub)"><td>コース</td><td>4 個</td><td>3 個</td><td>理論最速</td></tr>
+    <tr><td>市街地</td><td><input type="number" id="t4_city" min="5" max="600" step="1"></td><td><input type="number" id="t3_city" min="5" max="600" step="1"></td><td id="ideal_city"></td></tr>
+    <tr><td>サーキット</td><td><input type="number" id="t4_circuit" min="5" max="600" step="1"></td><td><input type="number" id="t3_circuit" min="5" max="600" step="1"></td><td id="ideal_circuit"></td></tr>
+    <tr><td>高速</td><td><input type="number" id="t4_highway" min="5" max="600" step="1"></td><td><input type="number" id="t3_highway" min="5" max="600" step="1"></td><td id="ideal_highway"></td></tr>
+  </table>
+  <div class="note">コーン（高速は前の車）にぶつかると1回 +1秒。<br>
+    コースの長さや速度を変えると、4 個 ＝ 理論最速 ＋15%、3 個 ＝ ＋35% に自動で設定します（あとから手で変えてよい）。</div>
 
   <label>再挑戦したときの景品の数</label>
   <select id="retryRule">
@@ -139,7 +150,7 @@
   <input type="range" id="assist" min="0" max="100" step="10">
   <div class="note">大きくするとカーブで外に流されにくく、道路の外に出ても中央へ戻ります（小さい子向け）。</div>
 
-  <label><input type="checkbox" id="cones"> コーン（障害物）を置く</label>
+  <label><input type="checkbox" id="cones"> 障害物（市街地・サーキットはコーン、高速は前を走る車）</label>
   <label><input type="checkbox" id="sound"> 音（走行音・効果音）</label>
   <label><input type="checkbox" id="mirror"> カメラ映像を左右反転（鏡のように）</label>
 
@@ -173,13 +184,15 @@
 
 <script type="module">
 import { FilesetResolver, PoseLandmarker } from './lib/vision_bundle.mjs';
-import { Race, MAX_SPEED, KMH_AT_MAX, TOP_KMH, CAR, UNITS_PER_M, rpmToMs } from './game.js';
+import { Race, COURSES, MAX_SPEED, KMH_AT_MAX, TOP_KMH, CAR, UNITS_PER_M, rpmToMs } from './game.js';
 import { DriveSound } from './sound.js';
 import { Records } from './records.js';
 import { readWheel, angleToSteer } from './wheel.js';
 
 const RESULT_MS = 9000;       // 景品の個数を出したあと、待機画面に戻るまでの時間
 const CHOICE_MS = 30000;      // 「受け取る／もう1回」を選ばないとき、自動で受け取りにするまでの時間
+const SELECT_MS = 30000;      // コースを選ばないとき、自動で決めるまでの時間
+const SELECT_HOLD_MS = 2000;  // ハンドルの傾きでコースを選ぶとき、そのままにする時間
 const CHOICE_HOLD_MS = 1500;  // ハンドルを左右に傾けて選ぶとき、傾けたままにする時間
 const AWAY_MS = 8000;         // レース中に人がいなくなったら中止するまでの時間
 const CONE_PENALTY = 1.0;     // コーン1本あたりのペナルティ[秒]
@@ -197,29 +210,34 @@ function log(msg) { const el = $('log'); el.textContent += `[${new Date().toLoca
 // ---------- 設定・集計（ブラウザに保存） ----------
 const SKEY = 'air-handle-settings', STATKEY = 'air-handle-stats';
 const TOP = Math.round(TOP_KMH / 10) * 10;   // 設定できる最高時速（モータの最高回転数で決まる。110 km/h。実際の頭打ちは 109.9 km/h）
-const DEF = { course: 'normal', maxKmh: TOP, price: 200, t4: 0, t3: 0, retryRule: 'best', limit: 90, sens: 45, assist: 30, cones: true, sound: true, mirror: true, stock: -1, camId: '' };
+const DEF = { course: 'normal', maxKmh: TOP, price: 200, times: null, retryRule: 'best', limit: 90, sens: 45, assist: 30, cones: true, sound: true, mirror: true, stock: -1, camId: '' };
 const settings = Object.assign({}, DEF, load(SKEY));
-delete settings.topSpeed; delete settings.target;
+delete settings.topSpeed; delete settings.target; delete settings.t4; delete settings.t3;
 if (!(settings.maxKmh <= TOP)) settings.maxKmh = TOP;   // 旧版（最高 300 km/h）の設定は、モータの最高速に合わせる
 const topFactor = () => settings.maxKmh / KMH_AT_MAX;
 const stats = Object.assign({ plays: 0, finishes: 0, prizes: 0, ranking: [] }, load(STATKEY));
 function load(k) { try { return JSON.parse(localStorage.getItem(k)) || {}; } catch { return {}; } }
 function save() { try { localStorage.setItem(SKEY, JSON.stringify(settings)); localStorage.setItem(STATKEY, JSON.stringify(stats)); } catch {} }
 
-const race = new Race();
-race.cx = 0.42;   // 右下のカメラ画面と重ならないよう、道路と車を少し左に寄せる
+// コースは 3 種類。それぞれ別に作っておき、選んだものを race にする
+const TYPES = ['city', 'circuit', 'highway'];
+const races = {};
+for (const t of TYPES) { races[t] = new Race(); races[t].cx = 0.42; }   // 右下のカメラ画面と重ならないよう、道路と車を少し左に寄せる
+let race = races.circuit;
 let builtKey = '';
 function rebuild() {
   const key = settings.course + settings.cones;
   if (key === builtKey) return;
-  race.build({ length: settings.course, cones: settings.cones });
+  for (const t of TYPES) races[t].build({ type: t, length: settings.course, cones: settings.cones });
   builtKey = key;
 }
-function idealTime() { return race.idealTime(topFactor()); }
+const courseTimes = (t) => settings.times[t];
+const lenName = () => ({ short: 'みじかい', normal: 'ふつう', long: 'ながい' }[settings.course]);
 
 function bindSettings() {
   $('maxKmh').max = TOP;
-  const ids = ['course', 'maxKmh', 'price', 't4', 't3', 'retryRule', 'limit', 'sens', 'assist', 'stock'];
+  const ids = ['course', 'maxKmh', 'price', 'retryRule', 'limit', 'sens', 'assist', 'stock'];
+  const tIds = TYPES.flatMap((t) => ['t4_' + t, 't3_' + t]);
   ids.forEach((id) => { $(id).value = settings[id]; });
   ['cones', 'sound', 'mirror'].forEach((id) => { $(id).checked = settings[id]; });
   const upd = (ev) => {
@@ -231,15 +249,17 @@ function bindSettings() {
     settings.stock = parseInt($('stock').value); if (isNaN(settings.stock)) settings.stock = -1;
     ['cones', 'sound', 'mirror'].forEach((id) => { settings[id] = $(id).checked; });
     rebuild();
-    const ideal = idealTime();
-    $('ideal').textContent = ideal.toFixed(1);
-    // コースや速度を変えたとき、または未設定なら、景品の個数のタイムを自動で決める（4 個 ＝ 理論最速 ＋15%、3 個 ＝ ＋35%）
-    if (!settings.t4 || !settings.t3 || (ev && ['course', 'maxKmh', 'cones'].includes(ev.target.id))) {
-      settings.t4 = Math.ceil(ideal * 1.15); settings.t3 = Math.ceil(ideal * 1.35);
-      $('t4').value = settings.t4; $('t3').value = settings.t3;
-    } else {
-      settings.t4 = Math.max(5, parseInt($('t4').value) || settings.t4);
-      settings.t3 = Math.max(settings.t4, parseInt($('t3').value) || settings.t3);
+    // コースの長さや速度を変えたとき、または未設定なら、景品の個数のタイムをコースごとに自動で決める（4 個 ＝ 理論最速 ＋15%、3 個 ＝ ＋35%）
+    const auto = !settings.times || (ev && ['course', 'maxKmh', 'cones'].includes(ev.target.id));
+    if (!settings.times) settings.times = {};
+    for (const t of TYPES) {
+      const ideal = races[t].idealTime(topFactor());
+      $('ideal_' + t).textContent = ideal.toFixed(1) + ' 秒';
+      if (auto || !settings.times[t]) { settings.times[t] = { t4: Math.ceil(ideal * 1.15), t3: Math.ceil(ideal * 1.35) }; $('t4_' + t).value = settings.times[t].t4; $('t3_' + t).value = settings.times[t].t3; }
+      else {
+        const t4 = Math.max(5, parseInt($('t4_' + t).value) || settings.times[t].t4);
+        settings.times[t] = { t4, t3: Math.max(t4, parseInt($('t3_' + t).value) || settings.times[t].t3) };
+      }
     }
     settings.price = Math.max(0, parseInt($('price').value) || 0);
     settings.retryRule = $('retryRule').value;
@@ -247,13 +267,15 @@ function bindSettings() {
     $('assistVal').textContent = settings.assist === 0 ? 'なし' : `${settings.assist}%`;
     save(); drawStats();
   };
-  [...ids, 'cones', 'sound', 'mirror'].forEach((id) => $(id).addEventListener(id === 'retryRule' ? 'change' : 'input', upd));
+  if (settings.times) for (const t of TYPES) if (settings.times[t]) { $('t4_' + t).value = settings.times[t].t4; $('t3_' + t).value = settings.times[t].t3; }
+  [...ids, ...tIds, 'cones', 'sound', 'mirror'].forEach((id) => $(id).addEventListener(id === 'retryRule' ? 'change' : 'input', upd));
   upd();
 }
 function drawStats() {
   $('stStats').textContent = `挑戦 ${stats.plays} 人 / 景品 ${stats.prizes} 個` + (settings.stock >= 0 ? ` / 残り ${settings.stock}` : '');
   $('statsDetail').textContent = `挑戦 ${stats.plays} 人、完走 ${stats.finishes} 人、景品 ${stats.prizes} 個`;
-  $('tGoal').textContent = `4個 ${settings.t4} 秒 ／ 3個 ${settings.t3} 秒`;
+  const ct = settings.times && courseTimes(race.type);
+  $('tGoal').textContent = ct ? `${COURSES[race.type].name}　4個 ${ct.t4} 秒 ／ 3個 ${ct.t3} 秒` : '';
   const st = { none: '記録: 未設定', prompt: '記録: 許可待ち（画面をクリック）', ok: `記録: ${records.name}`, error: '記録: 読めません' }[records.state];
   $('stRec').textContent = st; $('stRec').className = records.state === 'ok' ? 'ok' : records.state === 'none' ? '' : 'ng';
   $('recName').textContent = records.name || '未設定';
@@ -263,17 +285,22 @@ function drawStats() {
 // ---------- 記録フォルダ（records.csv） ----------
 const records = new Records();
 const today = () => new Date().toLocaleDateString('sv');   // YYYY-MM-DD
+// 記録の「コース」列（例「市街地・ふつう」）からコースの種類を出す。種類が書かれていない古い記録はサーキット
+const courseOf = (r) => TYPES.find((t) => (r['コース'] || '').startsWith(COURSES[t].name)) || 'circuit';
 // 記録フォルダから本日のランキングと集計を作り直す
 function applyRecords() {
   if (records.state !== 'ok') return;
   const rows = records.rows.filter((r) => (r['日時'] || '').startsWith(today()));
-  stats.ranking = rows.filter((r) => r['結果'] === 'ゴール').map((r, i) => ({ id: 'f' + i, time: parseFloat(r['タイム秒']), cones: parseInt(r['コーン']) || 0 }))
-    .filter((r) => !isNaN(r.time)).sort((a, b) => a.time - b.time).slice(0, 50);
+  stats.ranking = rows.filter((r) => r['結果'] === 'ゴール').map((r, i) => ({ id: 'f' + i, course: courseOf(r), time: parseFloat(r['タイム秒']), cones: parseInt(r['コーン']) || 0 }))
+    .filter((r) => !isNaN(r.time)).sort((a, b) => a.time - b.time).slice(0, 150);
   stats.plays = new Set(rows.map((r) => r['受付番号'])).size;
   stats.finishes = rows.filter((r) => r['結果'] === 'ゴール').length;
   stats.prizes = rows.reduce((a, r) => a + (parseInt(r['渡した景品数']) || 0), 0);
-  const all = records.rows.filter((r) => r['結果'] === 'ゴール').map((r) => parseFloat(r['タイム秒'])).filter((t) => !isNaN(t));
-  stats.best = all.length ? Math.min(...all) : null;
+  stats.bestBy = {};
+  for (const r of records.rows) {
+    const t = parseFloat(r['タイム秒']), c = courseOf(r);
+    if (r['結果'] === 'ゴール' && !isNaN(t) && !(stats.bestBy[c] <= t)) stats.bestBy[c] = t;
+  }
   save(); drawStats();
   log(`記録を読み込みました: ${records.name}/records.csv（全 ${records.rows.length} 件、本日 ${rows.length} 件）`);
 }
@@ -425,7 +452,8 @@ function readInput(now) {
 // もう1回は 1 回だけ。2回目が終わったら choice を飛ばして payout
 let t0hit = -1e9;
 let state = 'loading', t0 = 0, holdStart = 0, holdDir = 0, raceTime = 0, lightsOutAt = 0;
-let session = null;   // 1 回の受付（200円）: { no, attempt, results: [{ time, ok, reason, cones, prizes }] }
+let session = null;
+let selIdx = 1, idleIdx = 1;   // コース選択で選んでいるコース、待機デモで走っているコース   // 1 回の受付（200円）: { no, attempt, results: [{ time, ok, reason, cones, prizes }] }
 
 function setBig(big, small = '', color = '') {
   const b = $('big');
@@ -433,21 +461,44 @@ function setBig(big, small = '', color = '') {
   b.style.color = color; $('small').textContent = small;
 }
 function showCard(html) { const c = $('card'); if (c._html !== html) { c.innerHTML = html || ''; c._html = html; } c.style.display = html ? 'block' : 'none'; }
-function rankingHtml(highlight) {
-  const rows = stats.ranking.slice(0, 5).map((r, i) =>
+function rankingHtml(course, highlight) {
+  const list = stats.ranking.filter((r) => (r.course || 'circuit') === course);
+  const best = (stats.bestBy || {})[course];
+  const rows = list.slice(0, 5).map((r, i) =>
     `<tr style="${r.id === highlight ? 'color:var(--win);font-weight:bold' : ''}"><td>${i + 1}位</td><td>${r.time.toFixed(2)} 秒</td><td>${r.cones ? 'コーン' + r.cones : ''}</td></tr>`).join('');
-  return rows ? `<div>🏆 本日のランキング</div><table>${rows}</table>` + (stats.best ? `<div class="sub">これまでの最速 ${stats.best.toFixed(2)} 秒</div>` : '') : '';
+  return rows ? `<div>🏆 本日のランキング（${COURSES[course].name}）</div><table>${rows}</table>` + (best ? `<div class="sub">これまでの最速 ${best.toFixed(2)} 秒</div>` : '') : '';
 }
 function prizeTableHtml() {
-  return `<div>🎁 景品はタイムで決まる</div><table class="prizes">
-    <tr><td>4 個</td><td>${settings.t4} 秒以内</td></tr><tr><td>3 個</td><td>${settings.t3} 秒以内</td></tr><tr><td>2 個</td><td>それより遅くても OK</td></tr></table>`;
+  return `<div>🎁 景品はタイムで決まる（2〜4 個）</div><table class="prizes"><tr style="color:var(--sub)"><td></td><td>4 個</td><td>3 個</td></tr>`
+    + TYPES.map((t) => `<tr><td>${COURSES[t].icon} ${COURSES[t].name}</td><td>${courseTimes(t).t4} 秒以内</td><td>${courseTimes(t).t3} 秒以内</td></tr>`).join('')
+    + `</table><div class="sub">それより遅くても・完走できなくても 2 個</div>`;
+}
+// コースの平面図（SVG）
+function mapSvg(pts) {
+  if (!pts.length) return '';
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const [x, y] of pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  const k = 90 / Math.max(x1 - x0, y1 - y0), ox = (100 - (x1 - x0) * k) / 2, oy = (100 - (y1 - y0) * k) / 2;
+  const d = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${(ox + (x - x0) * k).toFixed(1)},${(oy + (y - y0) * k).toFixed(1)}`).join('');
+  const [sx, sy] = pts[0], [gx, gy] = pts[pts.length - 1];
+  return `<svg viewBox="0 0 100 100"><path d="${d}" fill="none" stroke="#000" stroke-opacity=".5" stroke-width="7" stroke-linejoin="round"/>`
+    + `<path d="${d}" fill="none" stroke="#e8edf2" stroke-width="3.5" stroke-linejoin="round"/>`
+    + `<circle cx="${ox + (sx - x0) * k}" cy="${oy + (sy - y0) * k}" r="4" fill="#7ee787"/><circle cx="${ox + (gx - x0) * k}" cy="${oy + (gy - y0) * k}" r="4" fill="#ffcf3f"/></svg>`;
+}
+function selectHtml() {
+  return `<div class="courses">` + TYPES.map((t, i) => `<div class="course ${i === selIdx ? 'sel' : ''}" data-course="${t}">
+      <div class="nm">${COURSES[t].icon} ${COURSES[t].name}</div>${mapSvg(races[t].mapPts)}<div class="ds">${COURSES[t].desc}</div>
+      <table class="times"><tr><td>4 個</td><td>${courseTimes(t).t4} 秒</td></tr><tr><td>3 個</td><td>${courseTimes(t).t3} 秒</td></tr></table></div>`).join('')
+    + `</div><div class="sub">← → で選んで Enter（1・2・3 でもOK）／ ハンドルを 左・まっすぐ・右 に 2 秒</div>`;
 }
 // タイム → 景品の個数（最低 2 個、最大 4 個。完走できなくても 2 個）
-function prizesFor(r) { return !r.ok ? 2 : r.time <= settings.t4 ? 4 : r.time <= settings.t3 ? 3 : 2; }
+function prizesFor(r) { const ct = courseTimes(session.course); return !r.ok ? 2 : r.time <= ct.t4 ? 4 : r.time <= ct.t3 ? 3 : 2; }
 function setLights(n) { [...document.querySelectorAll('#lights .l')].forEach((l, i) => l.classList.toggle('on', i < n)); }
 
+function useCourse(t) { if (race !== races[t]) { race = races[t]; race.reset(); drawStats(); } }
 function toIdle() {
-  state = 'idle'; holdStart = 0; race.reset(); autopilot = false; session = null;
+  state = 'idle'; holdStart = 0; autopilot = false; session = null;
+  useCourse(TYPES[idleIdx]); race.reset();
   $('lights').style.display = 'none';
 }
 // Enter（またはスタッフの景品機ボタン）：待機中ならお金を受け取ったのでスタート。結果画面なら「受け取る」
@@ -456,8 +507,16 @@ function onEnter(by) {
     if (settings.stock === 0) { setBig('景品切れ', 'スタッフを呼んでね'); return; }
     session = { no: Date.now().toString(36).toUpperCase(), attempt: 0, results: [] };
     stats.plays++; save(); drawStats(); log(`受付 ${session.no}（${settings.price}円, ${by}）`);
-    startRace();
-  } else if (state === 'choice') decide('accept');
+    state = 'select'; t0 = performance.now(); holdStart = 0; holdDir = null; useCourse(TYPES[selIdx]);
+  } else if (state === 'select') pickCourse(TYPES[selIdx]);
+  else if (state === 'choice') decide('accept');
+}
+// コース選択
+function moveSel(d) { selIdx = Math.max(0, Math.min(TYPES.length - 1, selIdx + d)); useCourse(TYPES[selIdx]); holdStart = performance.now(); }
+function pickCourse(t) {
+  if (state !== 'select') return;
+  selIdx = TYPES.indexOf(t); session.course = t; useCourse(t);
+  log(`コース: ${COURSES[t].name}`); beep(880, 120); startRace();
 }
 function startRace() {
   session.attempt++;
@@ -475,9 +534,10 @@ function finishRace(ok, reason) {
   let rankId = null;
   if (ok) {
     stats.finishes++; rankId = Date.now();
-    stats.ranking.push({ id: rankId, time: raceTime, cones: race.coneHits });
-    stats.ranking.sort((a, b) => a.time - b.time); stats.ranking = stats.ranking.slice(0, 50);
-    if (stats.best == null || raceTime < stats.best) stats.best = raceTime;
+    stats.ranking.push({ id: rankId, course: session.course, time: raceTime, cones: race.coneHits });
+    stats.ranking.sort((a, b) => a.time - b.time); stats.ranking = stats.ranking.slice(0, 150);
+    stats.bestBy = stats.bestBy || {};
+    if (!(stats.bestBy[session.course] <= raceTime)) stats.bestBy[session.course] = raceTime;
   }
   r.rankId = rankId;
   log(`${session.attempt}回目: ${ok ? raceTime.toFixed(2) + '秒' : reason} コーン${race.coneHits} → 景品${r.prizes}個`);
@@ -502,7 +562,7 @@ function recordRow(r, verdict, given) {
   const d = r.at, pad = (n) => String(n).padStart(2, '0');
   return { '日時': `${d.toLocaleDateString('sv')} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`, '受付番号': session.no, '回目': r.attempt,
     '結果': r.ok ? 'ゴール' : r.reason === 'away' ? '中止' : '時間切れ', 'タイム秒': r.ok ? r.time.toFixed(2) : '', 'コーン': r.cones,
-    'この回の景品数': r.prizes, '判定': verdict, '渡した景品数': given, 'コース': { short: 'みじかい', normal: 'ふつう', long: 'ながい' }[settings.course], '最高時速': settings.maxKmh };
+    'この回の景品数': r.prizes, '判定': verdict, '渡した景品数': given, 'コース': `${COURSES[session.course].name}・${lenName()}`, '最高時速': settings.maxKmh };
 }
 async function payout() {
   state = 'payout'; t0 = performance.now();
@@ -536,11 +596,29 @@ function update(now, dt) {
     case 'idle': {
       // 待機中は自動運転のデモ走行。お金を受け取ったらスタッフが Enter
       race.update(dt, race.autopilot(), 1, { topFactor: 0.7, assist: 0.5 });
-      if (race.finished) race.reset();
+      if (race.finished) { idleIdx = (idleIdx + 1) % TYPES.length; useCourse(TYPES[idleIdx]); race.reset(); }   // デモは 3 コースを順番に
       race.events.length = 0;
       setBig('エアハンドル\nドライブ', settings.stock === 0 ? '景品切れ（スタッフを呼んでね）'
         : `1回 ${settings.price} 円\n景品 2〜4 個 🎁`);
-      showCard(prizeTableHtml() + `<div class="sub">お金を入れたら Enter でスタート</div>` + (stats.ranking.length ? '<br>' + rankingHtml() : ''));
+      showCard(prizeTableHtml() + `<div class="sub">お金を入れたら Enter でスタート</div>` + (stats.ranking.some((r) => (r.course || 'circuit') === race.type) ? '<br>' + rankingHtml(race.type) : ''));
+      break;
+    }
+    case 'select': {
+      // コースを選ぶ。後ろでは選んでいるコースのデモが走る
+      race.update(dt, race.autopilot(), 1, { topFactor: 0.7, assist: 0.5 });
+      if (race.finished) race.reset();
+      race.events.length = 0;
+      setBig('', `あと ${Math.max(0, Math.ceil((SELECT_MS - el) / 1000))} 秒で自動で決まります`);
+      showCard(`<div style="font-size:1.5em;font-weight:900">コースをえらんでね</div>` + selectHtml());
+      // ハンドル：左に傾ける＝市街地、まっすぐ＝サーキット、右に傾ける＝高速。2 秒そのままで決定
+      if (wheel.held) {
+        const want = wheel.angle < -20 ? 0 : wheel.angle > 20 ? 2 : 1;
+        if (want !== selIdx || holdDir !== 'w') { selIdx = want; useCourse(TYPES[want]); holdStart = now; holdDir = 'w'; }
+        const p = Math.min(1, (now - holdStart) / SELECT_HOLD_MS);
+        $('holdBar').style.display = 'block'; $('holdBar').firstElementChild.style.width = (p * 100) + '%'; $('holdBar').firstElementChild.style.background = 'var(--win)';
+        if (p >= 1) { pickCourse(TYPES[selIdx]); break; }
+      } else holdDir = null;
+      if (el > SELECT_MS) pickCourse(TYPES[selIdx]);
       break;
     }
     case 'lights': {
@@ -561,6 +639,7 @@ function update(now, dt) {
       raceTime = el / 1000 + race.coneHits * CONE_PENALTY;
       for (const ev of race.events) {
         if (ev === 'cone') { if (settings.sound) driveSound()?.cone(); setBig('+1秒', 'コーンにぶつかった！', 'var(--ng)'); t0hit = now; }
+        if (ev === 'car') { if (settings.sound) driveSound()?.crash(); setBig('+1秒', '前の車にぶつかった！', 'var(--ng)'); t0hit = now; }
         if (ev === 'crash') { if (settings.sound) driveSound()?.crash(); setBig('ガシャン！', 'ガードレールにぶつかった', 'var(--ng)'); t0hit = now; }
       }
       race.events.length = 0;
@@ -580,8 +659,8 @@ function update(now, dt) {
       const left = Math.max(0, Math.ceil((CHOICE_MS - el) / 1000));
       showCard(`<div class="choice"><button class="ok" data-c="accept">✋→ 受け取る<small>Enter ／ ハンドルを右にかたむける</small></button>
         <button class="again" data-c="again">←✋ もう1回！<small>R ／ ハンドルを左にかたむける</small></button></div>
-        <div class="sub">もう1回は 1 回だけ。${rule}<br>あと ${left} 秒で自動で「受け取る」になります</div>`
-        + (r.ok && r.prizes < 4 ? `<div class="sub">あと ${(r.time - (r.prizes === 3 ? settings.t4 : settings.t3)).toFixed(2)} 秒速ければ ${r.prizes + 1} 個！</div>` : ''));
+        <div class="sub">もう1回は 1 回だけ（同じコース）。${rule}<br>あと ${left} 秒で自動で「受け取る」になります</div>`
+        + (r.ok && r.prizes < 4 ? `<div class="sub">あと ${(r.time - (r.prizes === 3 ? courseTimes(session.course).t4 : courseTimes(session.course).t3)).toFixed(2)} 秒速ければ ${r.prizes + 1} 個！</div>` : ''));
       // ハンドルを左右に傾けたまま 1.5 秒で決定
       const dir = wheel.held && Math.abs(wheel.angle) > 25 ? Math.sign(wheel.angle) : 0;
       if (dir && dir === holdDir) {
@@ -595,7 +674,7 @@ function update(now, dt) {
     }
     case 'payout': {
       race.update(dt, 0, 0, opts); race.events.length = 0;
-      showCard(`<div>${payout.msg}</div>` + (stats.ranking.length ? '<br>' + rankingHtml(session.results.at(-1).rankId) : ''));
+      showCard(`<div>${payout.msg}</div>` + (stats.ranking.some((r) => r.course === session.course) ? '<br>' + rankingHtml(session.course, session.results.at(-1).rankId) : ''));
       if (!payout.busy && el > RESULT_MS) { showCard(''); toIdle(); }
       break;
     }
@@ -609,12 +688,13 @@ function update(now, dt) {
 function drawHud() {
   const racing = state === 'race' || state === 'choice' || state === 'payout';
   $('tTime').textContent = (racing ? raceTime : 0).toFixed(2);
-  $('tTime').style.color = !racing ? '#fff' : raceTime <= settings.t4 ? 'var(--win)' : raceTime <= settings.t3 ? '#fff' : 'var(--ng)';
+  const ct = courseTimes(race.type);
+  $('tTime').style.color = !racing ? '#fff' : raceTime <= ct.t4 ? 'var(--win)' : raceTime <= ct.t3 ? '#fff' : 'var(--ng)';
   $('speed').textContent = Math.round(race.speed / MAX_SPEED * KMH_AT_MAX);
   $('rpm').textContent = Math.round(race.rpm / 10) * 10;
   $('rpmBar').style.width = Math.min(100, race.rpm / CAR.maxRpm * 100) + '%';
   $('prog').style.width = (race.progress * 100) + '%';
-  $('cones').textContent = racing ? `コーン ${race.coneHits} 本` + (race.offroad ? '　⚠ コースアウト' : '') : '';
+  $('cones').textContent = racing ? (race.type === 'highway' ? `接触 ${race.coneHits} 回` : `コーン ${race.coneHits} 本`) + (race.offroad ? '　⚠ コースアウト' : '') : '';
   $('camLabel').textContent = wheel.held ? `ハンドル ${Math.round(wheel.angle)}°` : '両手を見せてね';
   $('camLabel').style.color = wheel.held ? 'var(--ok)' : 'var(--ng)';
 }
@@ -669,7 +749,7 @@ function loop() {
     $('stFps').textContent = `認識 ${fpsN} / 画面 ${drawN} FPS` + (race.quality ? '' : ' 軽量');
     // 画面が 3 秒続けて 30 FPS を下回ったら、雲や遠くの林を省く軽量モードにする
     slowSec = drawN < 30 ? slowSec + 1 : 0;
-    if (slowSec >= 3 && race.quality) { race.quality = 0; log('描画が重いので軽量モードに切り替えました'); }
+    if (slowSec >= 3 && race.quality) { TYPES.forEach((t) => { races[t].quality = 0; }); log('描画が重いので軽量モードに切り替えました'); }
     fpsN = 0; drawN = 0; fpsT = now;
   }
   update(now, dt);
@@ -690,6 +770,9 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape') { if (document.fullscreenElement) document.exitFullscreen(); }   // Esc = 全画面解除
   else if ((e.key === 'q' || e.key === 'Q') && (state === 'race' || state === 'lights')) { $('lights').style.display = 'none'; finishRace(false, 'away'); }
   else if ((e.key === 'q' || e.key === 'Q') && state === 'choice') decide('accept');
+  else if (state === 'select' && ['ArrowLeft', 'ArrowRight', '1', '2', '3'].includes(e.key)) {
+    if (e.key === 'ArrowLeft') moveSel(-1); else if (e.key === 'ArrowRight') moveSel(1); else pickCourse(TYPES[+e.key - 1]);
+  }
   else if (e.key === 'ArrowLeft') { keys.left = true; lastKeyAt = performance.now(); }
   else if (e.key === 'ArrowRight') { keys.right = true; lastKeyAt = performance.now(); }
 });
@@ -698,7 +781,11 @@ document.addEventListener('keyup', (e) => {
   if (e.key === 'ArrowRight') { keys.right = false; lastKeyAt = performance.now(); }
 });
 $('gear').onclick = () => $('settings').classList.toggle('show');
-$('card').addEventListener('click', (e) => { const b = e.target.closest('button[data-c]'); if (b) decide(b.dataset.c); });
+// ボタンは押した瞬間に反応させる（カードは毎秒書き直すので、click だと押して離す間に消えて取りこぼすことがある）
+$('card').addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('button[data-c]'); if (b) decide(b.dataset.c);
+  const c = e.target.closest('[data-course]'); if (c) pickCourse(c.dataset.course);
+});
 // ブラウザを開き直したあと、最初の操作で記録フォルダへの書き込みを許可してもらう
 document.addEventListener('pointerdown', recordsGrant); document.addEventListener('keydown', recordsGrant);
 
@@ -734,7 +821,7 @@ updateFsHint();
 })();
 
 // テスト用
-window.__dbg = { race, settings, stats, records, get state() { return state; }, get raceTime() { return raceTime; }, get session() { return session; }, setAuto: (v) => { autopilot = v; } };
+window.__dbg = { get race() { return race; }, races, settings, stats, records, get state() { return state; }, get raceTime() { return raceTime; }, get session() { return session; }, pickCourse, setAuto: (v) => { autopilot = v; } };
 </script>
 </body>
 </html>
