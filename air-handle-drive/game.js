@@ -98,6 +98,39 @@ function fogc(c, f, k = 1) {
 // 整数から 0〜1 の疑似乱数（コースの見た目のむら用。毎回同じ値になる）
 function hash(n) { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
 
+// Blender でレンダリングした自車の画像（assets/car_{ハンドル角 0〜8}_{ブレーキ 0/1}.png）。読み込めるまでは従来の描画を使う
+const CARIMG = { n: 9, w: 336, h: 292, img: [[], []], loaded: 0, started: false };
+function carFramesReady() {
+  if (!CARIMG.started && typeof Image !== 'undefined') {
+    CARIMG.started = true;
+    for (let b = 0; b < 2; b++) for (let i = 0; i < CARIMG.n; i++) {
+      const im = new Image(); im.onload = () => { if (++CARIMG.loaded === CARIMG.n * 2) { CARIMG.w = CARIMG.img[0][0].naturalWidth; CARIMG.h = CARIMG.img[0][0].naturalHeight; } };
+      im.src = new URL(`assets/car_${i}_${b}.png`, import.meta.url).href; CARIMG.img[b].push(im);
+    }
+  }
+  return CARIMG.loaded === CARIMG.n * 2;
+}
+
+// 路面・芝・舗装の質感画像（assets/tex_*.png。灰色 50% が基準で、オーバーレイで重ねる）。遠くはミップマップ（縮小版）を使ってちらつきを防ぐ
+const CTX_FILTER = typeof CanvasRenderingContext2D !== 'undefined' && 'filter' in CanvasRenderingContext2D.prototype;   // ブルームに必要
+const TEXS = { started: false };
+function texStart() {
+  if (TEXS.started || typeof Image === 'undefined') return; TEXS.started = true;
+  for (const name of ['road', 'grass', 'pave']) {
+    const im = new Image();
+    im.onload = () => {
+      const m = [], pats = []; let w = im.naturalWidth, h = im.naturalHeight;
+      for (let l = 0; l < 6; l++) {
+        const c = document.createElement('canvas'); c.width = Math.max(1, w >> l); c.height = Math.max(1, h >> l);
+        const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(l ? m[l - 1] : im, 0, 0, c.width, c.height); m.push(c);
+        pats.push(g.createPattern(c, 'repeat'));
+      }
+      TEXS[name] = { m, pats, w, h };
+    };
+    im.src = new URL(`assets/tex_${name}.png`, import.meta.url).href;
+  }
+}
+
 function mulberry32(a) {
   return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -499,6 +532,7 @@ export class Race {
     const segs = this.segments;
     if (!segs.length) return;
     if (!SPR.ready) makeSprites();
+    texStart();
     const now = performance.now(), fdt = Math.min(0.05, (now - (this._lastRender || now)) / 1000); this._lastRender = now;
     this.stepParticles(fdt);
     const base = this.findSegment(this.position);
@@ -562,7 +596,7 @@ export class Race {
   postFx(ctx, W, H) {
     const pct = clamp(this.speed / MAX_SPEED, 0, 1);
     ctx.save();
-    if (this.quality) {
+    if (this.quality && CTX_FILTER) {
       const bw = Math.max(96, (W / 5) | 0), bh = Math.max(54, (H / 5) | 0);
       let b = this._bloom;
       if (!b || b.width !== bw || b.height !== bh) { b = this._bloom = document.createElement('canvas'); b.width = bw; b.height = bh; b.g = b.getContext('2d'); }
@@ -712,6 +746,7 @@ export class Race {
     // 芝生（しま模様）
     const T = this.theme;
     ctx.fillStyle = fogc(s.stripe ? T.ground1 : T.ground2, f, lit); ctx.fillRect(0, b.y + 0.5, W, y1 - b.y + 0.5);
+    if (this.quality) this.groundTex(ctx, s, W, b.y, y1, (w1 + w2) / 2, (x1 + x2) / 2, f);
     // 外側のグラベル（砂利）
     if (s.gravel) {
       const g = s.gravel, [i1, i2] = at(g * 1.14), [o1, o2] = at(g * BARRIER);
@@ -726,8 +761,8 @@ export class Race {
     // 舗装
     const [l1, l2] = at(-1), [r1, r2] = at(1);
     Q(T.road, 1 + s.shade, l1, r1, l2, r2);
+    if (this.quality) this.roadTex(ctx, s, f, l1, r1, l2, r2, y1, y2);
     if (w2 < 6) return;   // 遠くて細いときは細かい線を省く
-    if (this.quality && w2 > 9) this.drawSurface(ctx, s, at, Q, b.y, y1, w1, w2, x1, x2, f);
     // 白線（両端）
     for (const side of [-1, 1]) { const [p1, p2] = at(side * 0.965), [q1, q2] = at(side * 0.995); Q(C.roadLine, 1, p1, q1, p2, q2); }
     if (s.index === this.finishSeg || s.index === this.finishSeg + 1 || s.index === 9) {     // ゴールのチェッカーとスタートライン
@@ -745,33 +780,31 @@ export class Race {
     }
   }
 
-  // 路面のリアリティ：補修跡・タイヤの通り道（黒ずみ）・路肩の砂・芝のむら
-  drawSurface(ctx, s, at, Q, yTop, y1, w1, w2, x1, x2, f) {
-    const h = hash(s.index);
-    // 補修されたアスファルト（ところどころ色が違う帯）
-    if (h < 0.14) { const [p1, p2] = at(-1), [q1, q2] = at(1); ctx.globalAlpha = 0.5; Q(h < 0.07 ? [60, 62, 66] : [112, 114, 118], 1, p1, q1, p2, q2); ctx.globalAlpha = 1; }
-    // 各車線のタイヤの通り道（2本ずつ暗くなる）
-    ctx.globalAlpha = 0.16 + 0.1 * (1 - f);
-    for (let i = 0; i < LANES; i++) {
-      const c = -1 + (2 * i + 1) / LANES;
-      for (const d of [-0.1, 0.1]) { const [p1, p2] = at(c + d - 0.035), [q1, q2] = at(c + d + 0.035); Q([22, 22, 24], 1, p1, q1, p2, q2); }
-    }
-    // 継ぎ目・ひび（細い暗線）
-    if (h > 0.8 && w2 > 16) { ctx.globalAlpha = 0.28; const [p1, p2] = at(-1), [q1, q2] = at(1); poly(ctx, 'rgb(20,20,22)', p1, y1, q1, y1, q2, y1 - 1.4, p2, y1 - 1.4); }
-    // 路肩のほこり・砂（道路の外側が汚れる）
-    ctx.globalAlpha = 0.22;
-    for (const side of [-1, 1]) { const [p1, p2] = at(side * 0.9), [q1, q2] = at(side * 1.0); Q([150, 138, 112], 1, p1, q1, p2, q2); }
-    ctx.globalAlpha = 1;
-    // 芝（または歩道）のむら：道路沿いに濃淡の斑点を散らす
-    if (w2 > 22) {
-      for (let k = 0; k < 4; k++) {
-        const r = hash(s.index * 7 + k * 13), r2 = hash(s.index * 11 + k * 5), side = k % 2 ? 1 : -1;
-        const o = 1.7 + r * 3.2, wd = 0.1 + r2 * 0.28, yy = lerp(y1, yTop, r2);
-        const px = lerp(x1, x2, r2) + side * lerp(w1, w2, r2) * o, ww = lerp(w1, w2, r2) * wd;
-        ctx.fillStyle = r2 > 0.5 ? `rgba(25,60,22,${0.16 * f})` : `rgba(160,200,110,${0.12 * f})`;
-        ctx.fillRect(px - ww / 2, yy, ww, Math.max(1.5, ww * 0.12));
-      }
-    }
+  // 路面の質感（アスファルトの粒・タイヤの通り道・ひび・補修跡）：道路の幅いっぱいの画像を、セグメントごとに前後の位置に合わせて切り出して貼る
+  roadTex(ctx, s, f, l1, r1, l2, r2, y1, y2) {
+    const T = TEXS.road; if (!T) return;
+    const hh = y1 - y2; if (hh < 0.8 || f < 0.1) return;
+    const wd = Math.max(r1, r2) - Math.min(l1, l2);
+    const lv = clamp(Math.floor(Math.log2(Math.max(T.h / 15 / hh, T.w / wd))), 0, 5), m = T.m[lv], k = 1 / (1 << lv);
+    const zA = (s.index % 15) * 200, sy = (T.h - (zA + 200) / 3000 * T.h) * k, sh = (200 / 3000 * T.h) * k;
+    ctx.save(); ctx.beginPath(); ctx.moveTo(l1, y1); ctx.lineTo(r1, y1); ctx.lineTo(r2, y2); ctx.lineTo(l2, y2); ctx.closePath(); ctx.clip();
+    ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = Math.min(1, f * 1.2);
+    // 台形に貼る：手前の縁が l1、奥の縁が l2 なので、横にせん断をかけて道路の曲がりに合わせる
+    ctx.transform((r1 - l1 + r2 - l2) / 2, 0, l1 - l2, hh, l2, y2);
+    ctx.drawImage(m, 0, sy, m.width, sh, 0, 0, 1, 1);
+    ctx.restore();
+  }
+
+  // 芝（市街地は舗装）の質感：画像を地面にタイル状に敷く
+  groundTex(ctx, s, W, yTop, y1, w, cx, f) {
+    const kind = this.theme.off === 'pavement' ? 'pave' : 'grass', T = TEXS[kind]; if (!T) return;
+    const hh = y1 - yTop; if (hh < 0.8 || f < 0.1) return;
+    const per = kind === 'pave' ? 4 : 6, WU = per * 200;           // タイルが何セグメント分か（前後・左右とも同じ長さ）
+    const tw = WU * w / ROAD_W; if (tw < 30) return;                 // 遠くて細かすぎるときは省く
+    const lv = clamp(Math.floor(Math.log2(Math.max(T.h / per * 1 / hh, T.w / tw))), 0, 5), k = 1 / (1 << lv);
+    const sy = (T.h - ((s.index % per) * 200 + 200) / WU * T.h) * k, sx = tw / (T.w * k), sY = hh / (200 / WU * T.h * k);
+    const pat = T.pats[lv]; pat.setTransform(new DOMMatrix([sx, 0, 0, sY, cx, yTop - sy * sY]));
+    ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = Math.min(1, f * 1.2); ctx.fillStyle = pat; ctx.fillRect(0, yTop + 0.5, W, hh + 0.5); ctx.restore();
   }
 
   // ガードレール（直線）とタイヤバリア（カーブの外側）。道路の両側に立つ壁として描く
@@ -844,7 +877,16 @@ export class Race {
     ctx.fillStyle = sh; ctx.save(); ctx.scale(1, 0.16); ctx.beginPath(); ctx.arc(0, 10 * u, 62 * u, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     // タイヤの接地面の濃い影（地面に押し付けられている感じ）
     ctx.fillStyle = 'rgba(0,0,0,.55)';
-    for (const sx of [-1, 1]) { ctx.beginPath(); ctx.ellipse((sx > 0 ? 39 : -39) * u, 2 * u, 17 * u, 3.2 * u, 0, 0, Math.PI * 2); ctx.fill(); }
+    for (const sx of [-1, 1]) { ctx.beginPath(); ctx.ellipse((sx > 0 ? 42 : -42) * u, 2 * u, 18 * u, 3.2 * u, 0, 0, Math.PI * 2); ctx.fill(); }
+    // Blender でレンダリングした車の画像（ハンドルの角度ごとに 9 枚。隣り合う 2 枚を混ぜてなめらかに動かす）
+    const sprOK = carFramesReady();
+    if (sprOK) {
+      const st = clamp(this.steer, -1, 1), fpos = (st + 1) / 2 * (CARIMG.n - 1), f0 = Math.floor(fpos), f1 = Math.min(CARIMG.n - 1, f0 + 1), ft = fpos - f0;
+      const set = braking ? 1 : 0, dw = 116 * u, dh = dw * CARIMG.h / CARIMG.w, dxp = -dw / 2, dyp = -dh + 3 * u;
+      ctx.drawImage(CARIMG.img[set][f0], dxp, dyp, dw, dh);
+      if (ft > 0.02 && f1 !== f0) { ctx.globalAlpha = ft; ctx.drawImage(CARIMG.img[set][f1], dxp, dyp, dw, dh); ctx.globalAlpha = 1; }
+    }
+    if (!sprOK) {
     // 前輪（ハンドルを切ると少し見える）
     ctx.fillStyle = '#121212';
     const fs = this.steer * 3 * u;
@@ -911,16 +953,20 @@ export class Race {
     ctx.fillStyle = '#e53935'; ctx.fillRect(-45 * u, -84 * u, 4 * u, 28 * u); ctx.fillRect(41 * u, -84 * u, 4 * u, 28 * u);
     ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.max(6, Math.round(6.5 * u))}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('TAKUDEN EV', 0, -65.6 * u);
+    }
     // レインライト（ブレーキで明るく光る）
-    ctx.fillStyle = braking ? '#ff1744' : '#5a1010';
-    if (braking) { ctx.shadowColor = '#ff1744'; ctx.shadowBlur = 18 * u; }
-    ctx.fillRect(-5 * u, -9 * u, 10 * u, 5 * u);
-    ctx.shadowBlur = 0;
+    if (!sprOK) {
+      ctx.fillStyle = braking ? '#ff1744' : '#5a1010';
+      if (braking) { ctx.shadowColor = '#ff1744'; ctx.shadowBlur = 18 * u; }
+      ctx.fillRect(-5 * u, -9 * u, 10 * u, 5 * u);
+      ctx.shadowBlur = 0;
+    }
     if (braking) {   // ブレーキランプのにじみ（路面にも赤い光が映る）
       ctx.save(); ctx.globalCompositeOperation = 'screen';
-      const bl = ctx.createRadialGradient(0, -6.5 * u, 0, 0, -6.5 * u, 34 * u);
+      const by0 = sprOK ? -27 * u : -6.5 * u;
+      const bl = ctx.createRadialGradient(0, by0, 0, 0, by0, 34 * u);
       bl.addColorStop(0, 'rgba(255,60,60,.75)'); bl.addColorStop(0.35, 'rgba(255,30,40,.28)'); bl.addColorStop(1, 'rgba(255,0,0,0)');
-      ctx.fillStyle = bl; ctx.beginPath(); ctx.arc(0, -6.5 * u, 34 * u, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      ctx.fillStyle = bl; ctx.beginPath(); ctx.arc(0, by0, 34 * u, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     }
     ctx.rotate(-this.steer * 0.035);
     this.drawParticles(ctx, u * 100, true);   // はね飛ぶコーン・火花（車より手前）
@@ -1000,6 +1046,9 @@ function sign(g, x, y, w, h, bg, fg, text, font) {
 }
 
 function makeSprites() {
+  if (typeof Image !== 'undefined' && !SPR.coneLoading) {   // コーンは Blender でレンダリングした画像に差し替える（読み込めるまでは下で描いた絵を使う）
+    SPR.coneLoading = true; const im = new Image(); im.onload = () => { SPR.cone = im; }; im.src = new URL('assets/cone.png', import.meta.url).href;
+  }
   const R = mulberry32(99);
   // 針葉樹
   SPR.pine = canvas(200, 360, (g, w, h) => {
