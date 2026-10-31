@@ -21,9 +21,17 @@ Webカメラ → Chrome（index.html：MediaPipe Pose で両手首の傾き＝�
 > `index.html` を直接開いても動きません。必ず `.bat`（Mac は `.command`）から起動してください。
 
 ### Mac で使う
-1. ZIP をダウンロードしてダブルクリックで展開し、`air-handle-drive` フォルダを好きな場所（書類など）に置く
+**いちばん簡単な入れ方（おすすめ）**：**ターミナル**（Launchpad で「ターミナル」と検索）を開き、次の 1 行を貼って return。デスクトップに `air-handle-drive` フォルダができて Finder で開きます。この入れ方だと下の「開発元を検証できません」の警告も出ません。
+```
+curl -fsSL https://raw.githubusercontent.com/salt6004/takuden-formula-2025/mac-support/air-handle-drive/mac/install.sh | bash
+```
+同じ 1 行で最新版に入れ直せます（前の版は `air-handle-drive_old_日時` に残ります）。
+
+**ブラウザでダウンロードするとき**：https://github.com/salt6004/takuden-formula-2025/releases/download/mac-latest/air-handle-drive-mac.zip を開くと `air-handle-drive-mac.zip` が落ちてきます。ダブルクリックすると、ゲームのフォルダ `air-handle-drive` だけが出てきます（Safari は自動で展開することもあります）。
+
+1. 出てきた `air-handle-drive` フォルダを好きな場所（デスクトップや書類）に置く
 2. **`起動_Mac.command` をダブルクリック**（本番は **`起動_全画面_Mac.command`**）。ターミナルの窓が開き、Chrome でゲームが開きます
-   - **初回に「開発元を検証できないため開けません」と出たとき**：「完了」を押してから、**システム設定 → プライバシーとセキュリティ** を開き、下の方の「“起動_Mac.command”は…」の横の **「このまま開く」** を押す（パスワードを聞かれたら入力）。次からはダブルクリックで開きます
+   - **ブラウザでダウンロードした場合、初回に「開発元を検証できないため開けません」と出たとき**：「完了」を押してから、**システム設定 → プライバシーとセキュリティ** を開き、下の方の「“起動_Mac.command”は…」の横の **「このまま開く」** を押す（パスワードを聞かれたら入力）。次からはダブルクリックで開きます
    - それでも開けないときは、**ターミナル**（アプリケーション → ユーティリティ）を開き、`bash ` と入力（最後に空白）→ `起動_Mac.command` を窓にドラッグ → return
 3. カメラを「許可」。**初回は macOS が「“Google Chrome”がカメラへのアクセスを求めています」と聞く**ので「許可」。断ってしまったら **システム設定 → プライバシーとセキュリティ → カメラ** で Google Chrome を ON にして、Chrome を開き直す
 4. 終了は Chrome の窓を閉じてから、ターミナルの窓を閉じる（「プロセスを終了しますか」は「終了」）
@@ -203,6 +211,7 @@ Webカメラ → Chrome（index.html：MediaPipe Pose で両手首の傾き＝�
 | `wheel.js` | 骨格からハンドル角度を読む処理 |
 | `serve.ps1`, `起動.bat`, `起動_全画面.bat` | ローカルサーバと起動用（Windows） |
 | `起動_Mac.command`, `起動_全画面_Mac.command`, `mac/start.sh`, `mac/serve.pl` | ローカルサーバと起動用（Mac。サーバは標準の Perl） |
+| `mac/install.sh`, `mac/make_zip.py` | Mac へ 1 行で入れるスクリプトと、配布用 ZIP（air-handle-drive-mac.zip）を作るスクリプト |
 | `lib/`, `models/pose_landmarker_lite.task` | MediaPipe ライブラリと骨格認識モデル |
 | `esp32/janken_prize/` | 景品機のスケッチ |
 
