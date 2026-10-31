@@ -1,9 +1,9 @@
 #!/bin/bash
 # Air Handle Drive - Mac にダウンロードして展開する（ターミナルに1行貼るだけ）
-#   curl -fsSL https://raw.githubusercontent.com/salt6004/takuden-formula-2025/mac-support/air-handle-drive/mac/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Takuden-Formula/air-handle-drive/main/air-handle-drive/mac/install.sh | bash
 # ブラウザでダウンロードしたものと違い「開発元を検証できません」の警告が出ない（curl は隔離の印を付けないため）
 set -e
-URL="https://github.com/salt6004/takuden-formula-2025/archive/refs/heads/mac-support.zip"   # ブランチの最新
+URL="https://github.com/Takuden-Formula/air-handle-drive/archive/refs/heads/main.zip"   # ブランチの最新
 DEST="${1:-$HOME/Desktop}"
 [ -d "$DEST" ] || DEST="$HOME"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/ahd.XXXXXX")"

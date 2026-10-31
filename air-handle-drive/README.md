@@ -23,11 +23,11 @@ Webカメラ → Chrome（index.html：MediaPipe Pose で両手首の傾き＝�
 ### Mac で使う
 **いちばん簡単な入れ方（おすすめ）**：**ターミナル**（Launchpad で「ターミナル」と検索）を開き、次の 1 行を貼って return。デスクトップに `air-handle-drive` フォルダができて Finder で開きます。この入れ方だと下の「開発元を検証できません」の警告も出ません。
 ```
-curl -fsSL https://raw.githubusercontent.com/salt6004/takuden-formula-2025/mac-support/air-handle-drive/mac/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Takuden-Formula/air-handle-drive/main/air-handle-drive/mac/install.sh | bash
 ```
 同じ 1 行で最新版に入れ直せます（前の版は `air-handle-drive_old_日時` に残ります）。
 
-**ブラウザでダウンロードするとき**：https://github.com/salt6004/takuden-formula-2025/releases/download/mac-latest/air-handle-drive-mac.zip を開くと `air-handle-drive-mac.zip` が落ちてきます。ダブルクリックすると、ゲームのフォルダ `air-handle-drive` だけが出てきます（Safari は自動で展開することもあります）。ZIP を作り直したときは `python air-handle-drive/mac/make_zip.py` で作り、Release「mac-latest」の添付を差し替える
+**ブラウザでダウンロードするとき**：https://github.com/Takuden-Formula/air-handle-drive/releases/download/mac-latest/air-handle-drive-mac.zip を開くと `air-handle-drive-mac.zip` が落ちてきます。ダブルクリックすると、ゲームのフォルダ `air-handle-drive` だけが出てきます（Safari は自動で展開することもあります）。ZIP を作り直したときは `python air-handle-drive/mac/make_zip.py` で作り、Release「mac-latest」の添付を差し替える
 
 1. 出てきた `air-handle-drive` フォルダを好きな場所（デスクトップや書類）に置く
 2. **`起動_Mac.command` をダブルクリック**（本番は **`起動_全画面_Mac.command`**）。ターミナルの窓が開き、Chrome でゲームが開きます
