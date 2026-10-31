@@ -27,9 +27,9 @@ curl -fsSL https://raw.githubusercontent.com/salt6004/takuden-formula-2025/mac-s
 ```
 同じ 1 行で最新版に入れ直せます（前の版は `air-handle-drive_old_日時` に残ります）。
 
-**ブラウザでダウンロードするとき**：https://github.com/salt6004/takuden-formula-2025/archive/refs/heads/mac-support.zip を開き、落ちてきた ZIP をダブルクリックで展開する（Safari は自動で展開することもあります）。
+**ブラウザでダウンロードするとき**：https://github.com/salt6004/takuden-formula-2025/releases/download/mac-latest/air-handle-drive-mac.zip を開くと `air-handle-drive-mac.zip` が落ちてきます。ダブルクリックすると、ゲームのフォルダ `air-handle-drive` だけが出てきます（Safari は自動で展開することもあります）。ZIP を作り直したときは `python air-handle-drive/mac/make_zip.py` で作り、Release「mac-latest」の添付を差し替える
 
-1. 出てきたフォルダの中の `air-handle-drive` フォルダを好きな場所（デスクトップや書類）に置く
+1. 出てきた `air-handle-drive` フォルダを好きな場所（デスクトップや書類）に置く
 2. **`起動_Mac.command` をダブルクリック**（本番は **`起動_全画面_Mac.command`**）。ターミナルの窓が開き、Chrome でゲームが開きます
    - **ブラウザでダウンロードした場合、初回に「開発元を検証できないため開けません」と出たとき**：「完了」を押してから、**システム設定 → プライバシーとセキュリティ** を開き、下の方の「“起動_Mac.command”は…」の横の **「このまま開く」** を押す（パスワードを聞かれたら入力）。次からはダブルクリックで開きます
    - それでも開けないときは、**ターミナル**（アプリケーション → ユーティリティ）を開き、`bash ` と入力（最後に空白）→ `起動_Mac.command` を窓にドラッグ → return
