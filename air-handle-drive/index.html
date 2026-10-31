@@ -284,6 +284,7 @@ function drawStats() {
 
 // ---------- 記録フォルダ（records.csv） ----------
 const records = new Records();
+if (!records.supported) $('btnRecPick').textContent = 'records.csv をダウンロード';
 const today = () => new Date().toLocaleDateString('sv');   // YYYY-MM-DD
 // 記録の「コース」列（例「市街地・ふつう」）からコースの種類を出す。種類が書かれていない古い記録はサーキット
 const courseOf = (r) => TYPES.find((t) => (r['コース'] || '').startsWith(COURSES[t].name)) || 'circuit';
@@ -306,7 +307,7 @@ function applyRecords() {
 }
 async function recordsGrant() { if (records.state === 'prompt' && await records.grant()) applyRecords(); drawStats(); }
 $('btnRecPick').onclick = async () => {
-  if (!records.supported) return showError('このブラウザはフォルダの保存に対応していません。Chrome か Edge で開いてください。');
+  if (!records.supported) return records.download();   // Safari など：フォルダを選べないので records.csv をダウンロード
   try { await records.pick(); applyRecords(); } catch (e) { if (e.name !== 'AbortError') showError('フォルダを使えません: ' + e.message); }
   drawStats();
 };
@@ -388,7 +389,7 @@ async function serialSend(cmd) {
 }
 function setSerialStatus(ok) { $('stSerial').textContent = ok ? '景品機: 接続中' : '景品機: 未接続'; $('stSerial').className = ok ? 'ok' : 'ng'; }
 $('btnSerial').onclick = async () => {
-  if (!('serial' in navigator)) return showError('このブラウザは Web Serial に対応していません。Chrome か Edge で開いてください。');
+  if (!('serial' in navigator)) return showError('このブラウザ（Safari など）は景品機との接続に対応していません。景品機を使うときは Chrome か Edge で開いてください（Mac は「起動_Mac.command」が Chrome を探して開きます）。');
   try { await serialOpen(await navigator.serial.requestPort()); } catch { log('ポート選択キャンセル'); }
 };
 $('btnTest').onclick = () => dispense(1);
@@ -409,7 +410,7 @@ async function startCamera() {
   try { stream = await navigator.mediaDevices.getUserMedia({ video: v, audio: false }); }
   catch (e) {
     if (settings.camId) { settings.camId = ''; save(); return startCamera(); }
-    throw new Error('カメラを開けません: ' + e.message + '（他のアプリがカメラを使っていないか、カメラの許可を確認）');
+    throw new Error('カメラを開けません: ' + e.message + '（他のアプリがカメラを使っていないか、カメラの許可を確認。Mac は「システム設定 → プライバシーとセキュリティ → カメラ」で Chrome を ON にして、Chrome を開き直す）');
   }
   video.srcObject = stream; await video.play();
   cam.width = video.videoWidth; cam.height = video.videoHeight;
@@ -732,7 +733,7 @@ function drawCam(res) {
 
 // ---------- メインループ ----------
 let lastVideoTime = -1, fpsN = 0, fpsT = 0, lastFrame = performance.now(), drawN = 0, slowSec = 0;
-function resize() { gcv.width = Math.min(window.innerWidth, 1920); gcv.height = Math.min(window.innerHeight, 1080); }
+function resize() { gcv.width = Math.max(320, Math.min(window.innerWidth, 1920)); gcv.height = Math.max(180, Math.min(window.innerHeight, 1080)); }   // 窓が隠れていて 0 のときも描画で止まらないように
 window.addEventListener('resize', resize);
 
 function loop() {
@@ -765,9 +766,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); onEnter('key'); }
   else if ((e.key === 'r' || e.key === 'R') && state === 'choice') decide('again');
   else if (e.key === 's' || e.key === 'S') $('settings').classList.toggle('show');
-  else if (e.key === 'f' || e.key === 'F') { document.fullscreenElement ? document.exitFullscreen() : enterFullscreen(); }
+  else if (e.key === 'f' || e.key === 'F') { fsEl() ? exitFullscreen() : enterFullscreen(); }
   else if (e.key === 'a' || e.key === 'A') { autopilot = !autopilot; log('自動運転 ' + (autopilot ? 'ON' : 'OFF')); }
-  else if (e.key === 'Escape') { if (document.fullscreenElement) document.exitFullscreen(); }   // Esc = 全画面解除
+  else if (e.key === 'Escape') { if (fsEl()) exitFullscreen(); }   // Esc = 全画面解除
   else if ((e.key === 'q' || e.key === 'Q') && (state === 'race' || state === 'lights')) { $('lights').style.display = 'none'; finishRace(false, 'away'); }
   else if ((e.key === 'q' || e.key === 'Q') && state === 'choice') decide('accept');
   else if (state === 'select' && ['ArrowLeft', 'ArrowRight', '1', '2', '3'].includes(e.key)) {
@@ -790,24 +791,32 @@ $('card').addEventListener('pointerdown', (e) => {
 document.addEventListener('pointerdown', recordsGrant); document.addEventListener('keydown', recordsGrant);
 
 // ---------- 全画面 ----------
-// 起動_全画面.bat で開いたとき（?fs=1）は、最初のクリック/キーで全画面にする（ブラウザの決まりで操作が必要）。
+// 起動_全画面.bat / 起動_全画面_Mac.command で開いたとき（?fs=1）は、最初のクリック/キーで全画面にする（ブラウザの決まりで操作が必要）。
 // 解除は Esc（ブラウザ標準）。もう一度全画面にするときは F キー。
 const wantFs = new URLSearchParams(location.search).has('fs');
 let fsDone = false;
-function enterFullscreen() { document.documentElement.requestFullscreen().catch((e) => log('全画面にできません: ' + e.message)); }
-function updateFsHint() { $('fsHint').style.display = wantFs && !fsDone && !document.fullscreenElement ? 'block' : 'none'; }
+// Safari の古い版は webkit 付きの名前しか無く、Promise も返さない
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+function enterFullscreen() {
+  const el = document.documentElement;
+  try { const p = (el.requestFullscreen || el.webkitRequestFullscreen).call(el); if (p && p.catch) p.catch((e) => log('全画面にできません: ' + e.message)); }
+  catch (e) { log('全画面にできません: ' + e.message); }
+}
+function exitFullscreen() { (document.exitFullscreen || document.webkitExitFullscreen).call(document); }
+function updateFsHint() { $('fsHint').style.display = wantFs && !fsDone && !fsEl() ? 'block' : 'none'; }
 const autoFs = (e) => {
-  if (!wantFs || fsDone || document.fullscreenElement) return;
+  if (!wantFs || fsDone || fsEl()) return;
   if (e.type === 'keydown' && ['Escape', 'f', 'F'].includes(e.key)) return;
   fsDone = true; enterFullscreen();
 };
 document.addEventListener('pointerdown', autoFs); document.addEventListener('keydown', autoFs);
-document.addEventListener('fullscreenchange', () => { if (document.fullscreenElement) fsDone = true; updateFsHint(); });
+const onFsChange = () => { if (fsEl()) fsDone = true; updateFsHint(); };
+document.addEventListener('fullscreenchange', onFsChange); document.addEventListener('webkitfullscreenchange', onFsChange);
 updateFsHint();
 
 // ---------- 起動 ----------
 (async () => {
-  if (location.protocol === 'file:') { showError('index.html を直接開いても動きません。フォルダ内の「起動.bat」をダブルクリックしてください。'); return; }
+  if (location.protocol === 'file:') { showError('index.html を直接開いても動きません。フォルダ内の「起動.bat」（Mac は「起動_Mac.command」）をダブルクリックしてください。'); return; }
   resize(); bindSettings();
   try { await records.restore(); applyRecords(); } catch (e) { log('記録フォルダを読めません: ' + e.message); }
   drawStats();

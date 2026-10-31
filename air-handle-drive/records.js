@@ -2,8 +2,10 @@
 // 選んだフォルダに records.csv を作り、1回走るごとに1行足す。Excel でそのまま開ける（UTF-8 BOM 付き）。
 // フォルダの場所はブラウザ（IndexedDB）に覚えておき、次に起動したときも同じフォルダを使う。
 // ブラウザを開き直すと書き込みの許可が「確認待ち」に戻るので、最初のクリックかキー操作のときに許可を取り直す。
+// フォルダを選べないブラウザ（Mac の Safari・Firefox）では、記録をブラウザの中（localStorage）に残し、「フォルダを選ぶ」の代わりに records.csv をダウンロードする。
 
 const FILE = 'records.csv';
+const LKEY = 'ahd.records';
 export const COLS = ['日時', '受付番号', '回目', '結果', 'タイム秒', 'コーン', 'この回の景品数', '判定', '渡した景品数', 'コース', '最高時速'];
 
 function idb() {
@@ -39,13 +41,20 @@ function parseCsv(text) {
 }
 
 export class Records {
-  constructor() { this.dir = null; this.state = 'none'; this.rows = []; }   // state: none（未設定）/ prompt（許可待ち）/ ok / error
-  get supported() { return 'showDirectoryPicker' in window; }
-  get name() { return this.dir ? this.dir.name : ''; }
+  constructor() { this.dir = null; this.state = 'none'; this.rows = []; this.local = !('showDirectoryPicker' in window); }   // state: none（未設定）/ prompt（許可待ち）/ ok / error
+  get supported() { return !this.local; }
+  get name() { return this.local ? 'ブラウザ内' : this.dir ? this.dir.name : ''; }
+  get csv() { return '﻿' + [COLS.join(','), ...this.rows.map((r) => COLS.map((c) => csvCell(r[c])).join(','))].join('\r\n') + '\r\n'; }
+  // フォルダを選べないブラウザ用：records.csv をダウンロードする
+  download() {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([this.csv], { type: 'text/csv' })); a.download = FILE;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
 
   // 起動時：前に選んだフォルダを思い出す（許可が残っていれば読み込みまでする）
   async restore() {
-    if (!this.supported) return;
+    if (this.local) return this.load();
     try { this.dir = (await kv('dir')) || null; } catch { this.dir = null; }
     if (!this.dir) return;
     this.state = (await this.dir.queryPermission({ mode: 'readwrite' })) === 'granted' ? 'ok' : 'prompt';
@@ -53,6 +62,7 @@ export class Records {
   }
   // クリックやキー操作の中で呼ぶ（ブラウザの決まりで、許可の確認は操作の中でしか出せない）
   async grant() {
+    if (this.local) return true;
     if (!this.dir || this.state === 'ok') return this.state === 'ok';
     try { this.state = (await this.dir.requestPermission({ mode: 'readwrite' })) === 'granted' ? 'ok' : 'prompt'; } catch { this.state = 'prompt'; }
     if (this.state === 'ok') await this.load();
@@ -67,6 +77,10 @@ export class Records {
   }
 
   async load() {
+    if (this.local) {
+      try { this.rows = JSON.parse(localStorage.getItem(LKEY)) || []; } catch { this.rows = []; }
+      this.state = 'ok'; return this.rows;
+    }
     try {
       const fh = await this.dir.getFileHandle(FILE, { create: true });
       const text = await (await fh.getFile()).text();
@@ -85,6 +99,11 @@ export class Records {
   }
   async appendNow(rec) {
     if (this.state !== 'ok') return false;
+    if (this.local) {
+      this.rows.push(Object.fromEntries(COLS.map((c) => [c, String(rec[c] ?? '')])));
+      try { localStorage.setItem(LKEY, JSON.stringify(this.rows)); } catch {}
+      return true;
+    }
     const fh = await this.dir.getFileHandle(FILE, { create: true });
     const file = await fh.getFile();
     const w = await fh.createWritable({ keepExistingData: true });
