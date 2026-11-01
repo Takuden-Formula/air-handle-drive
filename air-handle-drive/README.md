@@ -11,6 +11,8 @@ Webカメラ → Chrome（index.html：MediaPipe Pose で両手首の傾き＝�
 - **景品機なしでも遊べる**：「景品 ○ 個！」が出たらスタッフが手渡しします。
 - **記録は PC のフォルダに保存**：設定で選んだフォルダの `records.csv` に1回ごとに書き足し、起動時にそこからランキングと集計を読み込みます。
 
+紅陵祭2026 のゲーム一覧：https://takuden-formula.github.io/koryosai2026/
+
 ## 0. いちばん簡単な遊び方（インストール不要）
 **https://takuden-formula.github.io/air-handle-drive/** を Chrome（または Edge）で開いてカメラを許可するだけ。Windows でも Mac でも同じ。この URL を送れば誰でも遊べる。
 - 景品機（ESP32）と記録フォルダも Chrome / Edge ならそのまま使える。Safari ではゲームだけ。
